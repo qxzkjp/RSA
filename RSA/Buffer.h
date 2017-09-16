@@ -14,6 +14,7 @@ public:
 	Buffer(const Buffer& buf);
 	Buffer(Buffer&& buf) noexcept;
 	Buffer& operator=(const Buffer& buf);
+	Buffer& operator=(Buffer&& buf);
 	~Buffer();
 	BYTE* raw();
 	BYTE const* raw() const;

@@ -15,23 +15,27 @@ struct rsaPublicKey
 	mpz_class e;
 };
 
-class RsaEncryptor : public AsymmetricEncryptor
+class RsaEncryptor : virtual public Encryptor
 {
 public:
 	RsaEncryptor(rsaPublicKey pk);
-	virtual std::vector<char> encrypt(const Buffer& M);
+	virtual std::vector<char> encrypt(const std::vector<char>& M);
+	virtual std::vector<char> exportKey();
+	virtual void importKey(std::vector<char> buf);
 protected:
 	RsaEncryptor();
 	mpz_class _N;
 	mpz_class _e;
 };
 
-class RsaDecryptor : public RsaEncryptor, public AsymmetricDecryptor
+class RsaDecryptor : public RsaEncryptor, virtual public Decryptor
 {
 public:
 	RsaDecryptor(size_t sz = 2048);
-	//virtual std::vector<char> encrypt(const Buffer& M);
-	virtual std::vector<char> decrypt(const Buffer& C);
+	virtual std::vector<char> decrypt(const std::vector<char>& C);
+	virtual void generateKey(size_t sz);
+	virtual std::vector<char> exportKey();
+	virtual void importKey(std::vector<char> buf);
 private:
 	mpz_class _p;
 	mpz_class _q;

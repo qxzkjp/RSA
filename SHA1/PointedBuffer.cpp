@@ -2,6 +2,23 @@
 #include "PointedBuffer.h"
 
 PointedBuffer::PointedBuffer(size_t n) : Buffer(n), _pos(0) {}
+
+PointedBuffer::PointedBuffer(const PointedBuffer& pb) : Buffer(pb), _pos(pb._pos) {}
+
+PointedBuffer::PointedBuffer(PointedBuffer&& pb) : Buffer(pb), _pos(pb._pos) {}
+
+PointedBuffer& PointedBuffer::operator=(const PointedBuffer& pb) {
+	Buffer::operator=(pb);
+	_pos = pb._pos;
+	return *this;
+}
+
+PointedBuffer& PointedBuffer::operator=(PointedBuffer&& pb) {
+	Buffer::operator=(pb);
+	_pos = pb._pos;
+	return *this;
+}
+
 void PointedBuffer::addData(const BYTE* ptr, size_t n) {
 	if (_pos + n > _sz)
 		throw 5; //die on memeory overflow

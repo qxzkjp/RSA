@@ -7,18 +7,22 @@ Buffer::Buffer(size_t n )
 	_sz = n;
 	updateData();
 }
+
 Buffer::Buffer(std::string str) {
 	_sz = str.size();
 	updateData((BYTE*)&str[0]);
 }
+
 Buffer::Buffer(const Buffer& buf) {
 	_sz = buf._sz;
 	updateData(buf._data);
 }
+
 Buffer::Buffer(Buffer&& buf) noexcept : _sz(buf._sz), _data(buf._data) {
 	buf._sz = 0;
 	buf._data = nullptr;
 }
+
 Buffer& Buffer::operator=(const Buffer& buf) {
 	if (this != &buf) {
 		_sz = buf._sz;
@@ -28,6 +32,18 @@ Buffer& Buffer::operator=(const Buffer& buf) {
 	}
 	return *this;
 }
+
+Buffer& Buffer::operator=(Buffer&& buf) {
+	if (this != &buf) {
+		if (_data)
+			delete[] _data;
+		_data = buf._data;
+		_sz = buf._sz;
+		buf._data = nullptr;
+	}
+	return *this;
+}
+
 Buffer::~Buffer() {
 	if (_sz != 0)
 		delete[] _data;

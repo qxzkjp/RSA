@@ -7,6 +7,19 @@
 #include "PointedBuffer.h"
 #include "Sha1Class.h"
 
+void printVec(std::vector<char> buf, std::ostream& os = std::cout) {
+	std::ios::fmtflags flg(os.flags());
+	os << std::hex;
+	for (int i = 0; i < buf.size(); ++i) {
+		if ((buf[i] & 0xF0) == 0)
+			os << "0";
+		os << (int)(unsigned char)buf[i];
+		if (i % 4 == 3)
+			os << " ";
+	}
+	os.flags(flg);
+}
+
 Buffer bufFromHexStr(std::string hex){
 	if (hex.length() % 2 != 0)
 		return Buffer(0);
@@ -31,39 +44,62 @@ void printBuffer(Buffer buf) {
 	std::cout.flags(flg);
 }
 
-bool testSha1(std::vector<std::vector<char>> msg, Buffer expected, size_t count = 1) {
+bool testSha1(std::vector<std::vector<char>> msg, Buffer expected, size_t count = 1, std::ostream* os = nullptr) {
 	Sha1Class sha;
 	for (auto i = msg.begin(); i != msg.end(); ++i) {
 		for (size_t j = 0; j < count; ++j) {
 			sha.addData(*i);
 		}
 	}
-	return expected == sha.finalise();
+	std::vector<char> out = sha.finalise();
+	if (os) {
+		(*os) << "Expected: ";
+		printBuffer(expected);
+		(*os) << std::endl;
+		(*os) << "Actual:   ";
+		printVec(out, *os);
+		(*os) << std::endl;
+	}
+	return expected == out;
 }
 
-bool testSha1(std::vector<std::shared_ptr<std::istream>> msg, Buffer expected) {
+bool testSha1(std::vector<std::shared_ptr<std::istream>> msg, Buffer expected, std::ostream* os = nullptr) {
 	Sha1Class sha;
 	for (auto i = msg.begin(); i != msg.end(); ++i) {
 			sha.addData(**i);
 	}
-	return expected == sha.finalise();
+	std::vector<char> out = sha.finalise();
+	if (os) {
+		(*os) << "Expected: ";
+		printBuffer(expected);
+		(*os) << std::endl;
+		(*os) << "Actual:   ";
+		printVec(out, *os);
+		(*os) << std::endl;
+	}
+	return expected == out;
 }
 
-void showSha1Test(std::vector<std::vector<char>> msg, Buffer expected, size_t count = 1) {
-	if (testSha1(msg, expected, count))
-		std::cout << "Success!";
-	else
-		std::cout << "Failure!";
-	std::cout << std::endl;
-
+bool showSha1Test(std::vector<std::vector<char>> msg, Buffer expected, size_t count = 1) {
+	if (testSha1(msg, expected, count, &std::cout)) {
+		std::cout << "Success!" << std::endl;
+		return true;
+	}
+	else {
+		std::cout << "Failure!" << std::endl;
+		return false;
+	}
 }
 
-void showSha1Test(std::vector<std::shared_ptr<std::istream>> msg, Buffer expected) {
-	if (testSha1(msg, expected))
-		std::cout << "Success!";
-	else
-		std::cout << "Failure!";
-	std::cout << std::endl;
+bool showSha1Test(std::vector<std::shared_ptr<std::istream>> msg, Buffer expected) {
+	if (testSha1(msg, expected, &std::cout)) {
+		std::cout << "Success!" << std::endl;
+		return true;
+	}
+	else {
+		std::cout << "Failure!" << std::endl;
+		return false;
+	}
 }
 
 struct Sha1TestVector {
@@ -77,11 +113,11 @@ struct sha1TestStream {
 	Buffer expected;
 };
 
-void showSha1Test(Sha1TestVector v) {
+bool showSha1Test(Sha1TestVector v) {
 	return showSha1Test(v.msg, v.expected, v.count);
 }
 
-void showSha1Test(sha1TestStream v) {
+bool showSha1Test(sha1TestStream v) {
 	return showSha1Test(v.msg, v.expected);
 }
 
@@ -95,6 +131,37 @@ std::vector<char> str2vec(std::string str) {
 	if(str.size()>0)
 		memcpy(&v[0], &str[0], str.size());
 	return v;
+}
+
+bool testSha1Clone(Sha1TestVector vec, std::ostream* os = nullptr) {
+	Sha1Class sha;
+	for (auto i = vec.msg.begin(); i != vec.msg.end(); ++i) {
+		for (size_t j = 0; j < vec.count; ++j) {
+			sha.addData(*i);
+		}
+	}
+	HashFunction* ptr = sha.clone();
+	std::vector<char> out = ptr->finalise();
+	if (os) {
+		(*os) << "Expected: ";
+		printBuffer(vec.expected);
+		(*os) << std::endl;
+		(*os) << "Actual:   ";
+		printVec(out, *os);
+		(*os) << std::endl;
+	}
+	return vec.expected == out;
+}
+
+bool showSha1CloneTest(Sha1TestVector vec) {
+	if (testSha1Clone(vec, &std::cout)) {
+		std::cout << "Success!" << std::endl;
+		return true;
+	}
+	else {
+		std::cout << "Failure!" << std::endl;
+		return false;
+	}
 }
 
 int main()
@@ -155,11 +222,20 @@ int main()
 			bufFromHexStr("a49b2446a02c645bf419f995b67091253a04a259")
 		},
 	};
-
+	bool success = true;
+	std::cout << "Testing hashing from vectors..." << std::endl;
 	for (auto i = vects.begin(); i != vects.end(); ++i)
-		showSha1Test(*i);
+		success = success && showSha1Test(*i);
+	std::cout << std::endl << "Testing hashing from streams..." << std::endl;
 	for (auto i = streams.begin(); i != streams.end(); ++i)
-		showSha1Test(*i);
+		success = success && showSha1Test(*i);
+	std::cout << std::endl << "Testing hash object cloning..." << std::endl;
+	for (auto i = vects.begin(); i != vects.end(); ++i)
+		success = success && showSha1CloneTest(*i);
+	if (success)
+		std::cout << std::endl << "All succeeded!";
+	else
+		std::cout << std::endl << "Some failures.";
 	std::cout << std::endl;
 	system("pause");
     return 0;

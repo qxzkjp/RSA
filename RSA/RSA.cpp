@@ -2,11 +2,14 @@
 //
 
 #include "stdafx.h"
-
+#include<memory>
 #include "CryptContext.h"
 #include "randomNumbers.h"
 #include "Buffer.h"
 #include "mpzConvert.h"
+#include "RsaDecryptor.h"
+#include "../SHA1/Sha1Class.h"
+
 /*
 bool oldLikelyPrime(mpz_class n) {
 	return mpz_likely_prime_p(n.get_mpz_t(), globalContext.gmpState(), 0);
@@ -93,11 +96,61 @@ private:
 	mpz_class _qinv;
 };*/
 
+typedef std::shared_ptr<HashFunction> hashPtr;
+
+std::vector<char> MGF1(hashPtr hash, std::vector<char> mgfSeed, size_t maskLen) {
+	if (maskLen == 0)
+		return std::vector<char>(0);
+	std::vector<char> ret(maskLen);
+	size_t hLen = hash->length();
+	hash->reset();
+	hash->addData(mgfSeed);
+	if (maskLen > hLen << 32)
+		throw 5; //throw random object and die
+	size_t q = (maskLen + hLen - 1) / hLen; //ceiling of maskLen/hLen
+	std::vector<char> ctrvec(4);
+	std::vector<char> hashout(hLen);
+	HashFunction* hash2;
+	auto it = ret.begin();
+	//we fill up the output buffer in hlen-sized chunks; we can fit q-1 whole chunks in the buffer
+	for (uint32_t counter = 0; counter < q-1; ++counter) {
+		hash2 = hash->clone();
+		reverseMemcpy(&ctrvec[0], &counter, 4);//only works on little-endian
+		hash2->addData(ctrvec);
+		hash2->finalise(it);
+//		size_t check = it - ret.begin();
+		it += hLen;
+	}
+	// now we do the final block, which might not be a whole block
+	hash2 = hash->clone();
+	size_t counter = q - 1;
+	reverseMemcpy(&ctrvec[0], &counter, 4);//only works on little-endian
+	hash2->addData(ctrvec);
+	hash2->finalise(hashout.begin());
+	size_t r = (q * hLen) - maskLen;
+	std::copy(hashout.begin(), hashout.begin() + (hLen - r), it);
+	return ret;
+}
+
+void printVec(std::vector<char> buf, std::ostream& os = std::cout) {
+	std::ios::fmtflags flg(os.flags());
+	os << std::hex;
+	for (int i = 0; i < buf.size(); ++i) {
+		if ((buf[i] & 0xF0) == 0)
+			os << "0";
+		os << (int)(unsigned char)buf[i];
+		if (i % 4 == 3 && i % 32 != 31)
+			os << " ";
+		if (i % 32 == 31)
+			os << std::endl;
+	}
+	os.flags(flg);
+}
+
 int main()
 {
-	/*
-	RSA key(2048);
-	Buffer M ("Hello World!");
+	//RsaDecryptor key(2048);
+	/*Buffer M ("Hello World!");
 	Buffer C;
 	Buffer Mprime;
 	C = key.encrypt(M);
@@ -107,6 +160,42 @@ int main()
 		std::cout << "Success!" << std::endl;
 	else
 		std::cout << "Failure!" << std::endl;*/
+	size_t testLen = (UCHAR_MAX+1)*20;
+	std::vector<char> v = MGF1(hashPtr(new Sha1Class), { 1,2,3,4,5,6,7,8,9,10 }, testLen);
+	Sha1Class sha;
+	std::vector<char> tmp(20);
+	std::vector<char> w(0);
+	size_t n = 255;
+	for (size_t i = 0; i <= CHAR_MAX; ++i) {
+		sha.addData({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, (char)i });
+		sha.finalise(tmp.begin());
+		w.insert(w.end(), tmp.begin(), tmp.end());
+		sha.reset();
+	}
+	for (char i = CHAR_MIN; i < 0; ++i) {
+		sha.addData({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, i });
+		sha.finalise(tmp.begin());
+		w.insert(w.end(), tmp.begin(), tmp.end());
+		sha.reset();
+	}
+	bool calcTest = memcmp(&v[0], &w[0], testLen) == 0;
+	std::cout << "MGF1 calculation test ";
+	if (calcTest)
+		std::cout << "successful";
+	else
+		std::cout << "failed";
+	std::cout << std::endl;
+	bool truncTest = true;
+	for (int i = 1; i < testLen; ++i) {
+		w = MGF1(hashPtr(new Sha1Class), { 1,2,3,4,5,6,7,8,9,10 }, i);
+		truncTest = truncTest && (memcmp(&v[0], &w[0], i) == 0);
+	}
+	std::cout << "MGF1 truncation test ";
+	if (truncTest)
+		std::cout << "successful";
+	else
+		std::cout << "failed";
+	std::cout << std::endl;
 	system("pause");
 	return 0;
 }

@@ -156,6 +156,7 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\SHA1\Sha1Class.h" />
     <ClInclude Include="Buffer.h" />
     <ClInclude Include="CryptContext.h" />
     <ClInclude Include="interfaces.h" />
@@ -166,6 +167,8 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\SHA1\PointedBuffer.cpp" />
+    <ClCompile Include="..\SHA1\Sha1Class.cpp" />
     <ClCompile Include="Buffer.cpp" />
     <ClCompile Include="CryptContext.cpp" />
     <ClCompile Include="millerRabin.cpp" />

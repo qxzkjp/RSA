@@ -65,6 +65,14 @@ std::istream& Sha1Class::addData(std::istream& is) {
 	return is;
 }
 std::vector<char> Sha1Class::finalise() {
+	std::vector<char> ret(length());
+	finalise(ret.begin());
+	return ret;
+}
+
+void Sha1Class::finalise(std::vector<char>::iterator it){
+	//if (v.size() < length())
+	//	v.resize(length()); //if not enough space in the buffer, resize it
 	//set up temp state for final block
 	Buffer tmp = _buf;
 	size_t tpos = _buf.getPos();
@@ -86,11 +94,13 @@ std::vector<char> Sha1Class::finalise() {
 	//add the final chunk to the temp state
 	addChunkToState(&tmp[0], tmph);
 	//copy h-values as big-endian to the output buffer. this is the final hash result.
-	std::vector<char> ret(5 * sizeof(uint32_t));
-	uint32_t* ptr = (uint32_t*)&ret[0];
-	for (int i = 0; i < 5; ++i)
-		reverseMemcpy(ptr++, tmph + i, sizeof(uint32_t));
-	return ret;
+	for (int i = 0; i < 5; ++i) {
+		char* ptr = (char*)(tmph + i);
+		for (int j = 3; j >= 0; --j) {
+			*it = *(ptr + j);
+			++it;
+		}
+	}
 }
 
 void Sha1Class::addChunk() {
@@ -143,4 +153,13 @@ void Sha1Class::addChunkToState(const BYTE* buf, uint32_t h[5]) {
 	h[2] += c;
 	h[3] += d;
 	h[4] += e;
+}
+
+size_t Sha1Class::length() {
+	return 20;
+}
+
+HashFunction* Sha1Class::clone() {
+	Sha1Class* hash = new Sha1Class(*this);
+	return hash;
 }

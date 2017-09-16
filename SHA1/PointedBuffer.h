@@ -5,6 +5,10 @@ class PointedBuffer : public Buffer
 {
 public:
 	PointedBuffer(size_t n);
+	PointedBuffer(const PointedBuffer& pb);
+	PointedBuffer(PointedBuffer&& pb);
+	PointedBuffer& operator=(const PointedBuffer& pb);
+	PointedBuffer& operator=(PointedBuffer&& pb);
 	void addData(const BYTE* ptr, size_t n);
 	void addData(const BYTE* ptr);
 	void addData(const Buffer buf);

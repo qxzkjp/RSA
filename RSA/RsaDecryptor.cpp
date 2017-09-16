@@ -40,14 +40,20 @@ RsaEncryptor::RsaEncryptor(rsaPublicKey pk) : _N(pk.N), _e(pk.e) {
 RsaEncryptor::RsaEncryptor() {
 }
 
-std::vector<char> RsaEncryptor::encrypt(const Buffer& M)
+std::vector<char> RsaEncryptor::encrypt(const std::vector<char>& M)
 {
-	mpz_class m = bufferToMpzClass(M);
+	mpz_class m = vectorToMpzClass(M);
 	mpz_class c;
 	mpz_powm(c.get_mpz_t(), m.get_mpz_t(), _e.get_mpz_t(), _N.get_mpz_t());
 	std::vector<char> C = mpzClassToVector(c);
 	return C;
 }
+
+std::vector<char> RsaEncryptor::exportKey() {
+	std::cerr << "RsaEncryptor::exportKey" << std::endl;
+	return std::vector<char>(0);
+}
+void RsaEncryptor::importKey(std::vector<char> buf) {}
 
 RsaDecryptor::RsaDecryptor(size_t sz)
 {
@@ -68,9 +74,15 @@ RsaDecryptor::RsaDecryptor(size_t sz)
 	mpz_gcdext(gcd.get_mpz_t(), _qinv.get_mpz_t(), NULL, _q.get_mpz_t(), _p.get_mpz_t()); //q^-1 mod p
 }
 
-std::vector<char> RsaDecryptor::decrypt(const Buffer& C)
+std::vector<char> RsaDecryptor::exportKey() { 
+	std::cerr << "RsaDecryptor::exportKey" << std::endl;
+	return std::vector<char>(0);
+}
+void RsaDecryptor::importKey(std::vector<char> buf) {}
+
+std::vector<char> RsaDecryptor::decrypt(const std::vector<char>& C)
 {
-	mpz_class c = bufferToMpzClass(C);
+	mpz_class c = vectorToMpzClass(C);
 	mpz_class m, m1, m2, m3, h;
 	mpz_powm(m1.get_mpz_t(), c.get_mpz_t(), _dp.get_mpz_t(), _p.get_mpz_t());
 	mpz_powm(m2.get_mpz_t(), c.get_mpz_t(), _dq.get_mpz_t(), _q.get_mpz_t());
@@ -87,3 +99,5 @@ std::vector<char> RsaDecryptor::decrypt(const Buffer& C)
 	std::vector<char> M = mpzClassToVector(m);
 	return M;
 }
+
+void RsaDecryptor::generateKey(size_t sz) {}

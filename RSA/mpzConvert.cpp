@@ -30,3 +30,9 @@ std::vector<char> mpzClassToVector(mpz_class n) {
 	mpz_export(&ret[0], NULL, 1, 1, -1, 0, n.get_mpz_t());
 	return ret;
 }
+
+mpz_class vectorToMpzClass(std::vector<char> v) {
+	mpz_class p;
+	mpz_import(p.get_mpz_t(), v.size(), 1, 1, -1, 0, &v[0]);
+	return p;
+}
