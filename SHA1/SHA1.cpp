@@ -140,7 +140,7 @@ bool testSha1Clone(Sha1TestVector vec, std::ostream* os = nullptr) {
 			sha.addData(*i);
 		}
 	}
-	HashFunction* ptr = sha.clone();
+	hashPtr ptr = sha.clone();
 	std::vector<char> out = ptr->finalise();
 	if (os) {
 		(*os) << "Expected: ";

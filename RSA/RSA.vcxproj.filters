@@ -45,6 +45,15 @@
     <ClInclude Include="..\SHA1\Sha1Class.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="eflags.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="memoryhelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mgf1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -75,6 +84,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\SHA1\PointedBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="memoryhelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mgf1.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

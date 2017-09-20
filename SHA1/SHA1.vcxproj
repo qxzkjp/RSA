@@ -148,6 +148,7 @@
   <ItemGroup>
     <ClInclude Include="..\RSA\Buffer.h" />
     <ClInclude Include="..\RSA\interfaces.h" />
+    <ClInclude Include="..\RSA\memoryhelper.h" />
     <ClInclude Include="PointedBuffer.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Sha1Class.h" />
@@ -156,6 +157,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RSA\Buffer.cpp" />
+    <ClCompile Include="..\RSA\memoryhelper.cpp" />
     <ClCompile Include="PointedBuffer.cpp" />
     <ClCompile Include="SHA1.cpp" />
     <ClCompile Include="Sha1Class.cpp" />

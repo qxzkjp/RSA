@@ -1,12 +1,6 @@
 #include "stdafx.h"
 #include "Sha1Class.h"
-
-void reverseMemcpy(void* dst, void* src, size_t cnt) {
-	char* d = (char*)dst;
-	char* s = (char*)src;
-	for (size_t i = 0; i < cnt; ++i)
-		d[cnt - i - 1] = s[i];
-}
+#include "../RSA/memoryhelper.h"
 
 uint32_t ROTL(uint32_t a, size_t n) {
 	return (a << n) | (a >> (32 - n));
@@ -50,6 +44,31 @@ void Sha1Class::addData(const std::vector<char>& v) {
 	//otherwise, copy all the data into the chunk and leave it alone
 	else if (v.size() > 0) {
 		_buf.addData((BYTE*)&v[0], v.size());
+	}
+}
+
+void Sha1Class::addData(std::vector<char>::const_iterator begin, std::vector<char>::const_iterator end)
+{
+	size_t inpos = 0;
+	size_t inSize = end - begin;
+	_size += inSize;
+	//if we have enough extra data to finish the current chunk, copy in enough data to fill the chunk and add it to the state
+	if (inSize >= _buf.remaining()) {
+		inpos += _buf.remaining();
+		_buf.addData((BYTE*)&begin[0]);
+		addChunk();
+		//then, add  whole chunks from the input buffer until we have less than a whole chunk left
+		while (inSize - inpos >= _buf.size()) {
+			addChunkToState((BYTE*)&begin[inpos], _h);
+			inpos += _buf.size();
+		}
+		//then we copy the remainder (if any) into the beginning of our current chunk, and leave it alone
+		if (inSize > inpos)
+			_buf.addData((BYTE*)&begin[inpos], inSize - inpos);
+	}
+	//otherwise, copy all the data into the chunk and leave it alone
+	else if (inSize > 0) {
+		_buf.addData((BYTE*)&begin[0], inSize);
 	}
 }
 
@@ -159,7 +178,6 @@ size_t Sha1Class::length() {
 	return 20;
 }
 
-HashFunction* Sha1Class::clone() {
-	Sha1Class* hash = new Sha1Class(*this);
-	return hash;
+hashPtr Sha1Class::clone() {
+	return std::make_shared<Sha1Class>(*this);
 }

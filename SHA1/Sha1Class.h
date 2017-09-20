@@ -8,11 +8,12 @@ public:
 	Sha1Class();
 	void reset();
 	void addData(const std::vector<char>& v);
+	void addData(std::vector<char>::const_iterator begin, std::vector<char>::const_iterator end);
 	std::istream& addData(std::istream& is);
 	std::vector<char> finalise();
 	void finalise(std::vector<char>::iterator it);
 	size_t length();
-	HashFunction* clone();
+	hashPtr clone();
 private:
 	void addChunk();
 	void addChunkToState(const BYTE* buf, uint32_t h[5]);
