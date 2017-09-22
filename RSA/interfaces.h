@@ -31,8 +31,6 @@ public:
 	virtual ~HashFunction() {};
 };
 
-//HashFunction::~HashFunction(){}
-
 class Encryptor : virtual public CipherBase
 {
 public:
@@ -62,7 +60,22 @@ public:
 	virtual ~TaggedDecryptor() {};
 };
 
+class Signer : virtual public CipherBase
+{
+public:
+	virtual std::vector<char> sign(std::istream& msg) = 0;
+	virtual ~Signer() {};
+};
+
+class Verifier : virtual public CipherBase
+{
+public:
+	virtual std::vector<char> sign(std::istream& msg, const std::vector<char>& sig) = 0;
+	virtual ~Verifier() {};
+};
+
 typedef std::shared_ptr<HashFunction> hashPtr;
+typedef std::shared_ptr<Verifier> verifyPtr;
 typedef std::vector<char> charBuf;
 
 inline charBuf doHash(hashPtr hash, charBuf L) {

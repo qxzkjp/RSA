@@ -9,7 +9,13 @@
 
 #include <stdio.h>
 #include <tchar.h>
-
-
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <memory>
+#include <map>
+#include <ctime>
+#include <windows.h>
 
 // TODO: reference additional headers your program requires here
