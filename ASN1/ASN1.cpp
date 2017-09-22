@@ -11,6 +11,7 @@ using std::endl;
 using std::vector;
 using std::ios;
 using std::ifstream;
+using std::fstream;
 using std::istream;
 using std::make_shared;
 using std::shared_ptr;
@@ -22,44 +23,44 @@ struct AsnTime {
 	int day;
 	int month;
 	int year;
-	//int tzHrs;
 	int tzMin;
-	//bool tzdir;
 	bool hasSeconds;
 };
 
-vector<size_t> parseOID(const vector<char>& v) {
-	vector<size_t> ret;
-	if (v.size() == 0)
-		return vector<size_t>();
-	//some weird decoding voodoo for the first two segments
-	//for 0-39 seg 1 is 0, seg 2 is 0-39
-	//for 40-79 seg1 is 1, seg 2 is 0-39
-	//80+, seg 1 is 2, seg 2 is (the value) - 80
-	if ((unsigned char)v[0] / 40 < 2) {
-		ret.push_back((unsigned char)v[0] / 40);
-		ret.push_back((unsigned char)v[0] % 40);
+void appendSeptets(std::ostream& os, size_t n) {
+	const size_t bitness = sizeof(size_t)*CHAR_BIT;
+	static_assert(bitness == 64, "this algorithm assumes a 64-bit system");
+	if (n == 0) {
+		os << '\0';
+		return;
 	}
-	else {
-		ret.push_back(2);
-		ret.push_back((unsigned char)v[0] - 80);
+	if ((n&(1LL << (bitness - 1))) != 0) {//check high bit
+		os << ((char)(unsigned char)0x81); //we set the high bit to signal there is more
+		n <<= 1; //throw away high bit
 	}
-	size_t nextSeg = 0;
-	for (size_t i = 1; i < v.size(); ++i) {
-		//shift the number up 7 bits to clear room for the next not-quite-byte
-		nextSeg <<= 7;
-		//add a one byte value; bitmask should guarantee it is non-negative and 7-bit
-		nextSeg += v[i] & 0x7F;
-		//if the high bit is not set, we have finished this segment
-		if ((v[i] & 0x80) == 0) {
-			ret.push_back(nextSeg);
-			nextSeg = 0;
-		}
+	else {//if there is no high bit, we have leading zeroes, and may have to throw away the first few septets
+		n <<= 1; //throw away high bit
+		if (n != 0)  //if we still have bits left, they'll be shifted into top septet
+			while ((n&(0xF7LL << 56)) == 0) //while there is nothing in the top septet
+				n <<= 7; //we throw away the top 7 bits
 	}
-	return ret;
+	//once high bit is dealt with, we have 63 remaining bits, and 63=7*9
+	//so we can take 7 bits at a time until we get to the end of the number
+	//of course, some septets may have already been discarded as leading zeroes
+	while (n > 0) {
+		char tmp = n >> 57; //top 7 bits
+		if ((n & 0x01FFFFFFFFFFFFFFLL) != 0) //if there are more than 7 bits left
+			tmp |= 0x80; //we set the high bit to signal we are not finished
+		os << tmp;
+		n <<= 7;
+	}
 }
 
 void appendSeptets(vector<char>& v, size_t n) {
+	if (n == 0) {
+		v.push_back(0);
+		return;
+	}
 	const size_t bitness = sizeof(size_t)*CHAR_BIT;
 	static_assert(bitness == 64, "this algorithm assumes a 64-bit system");
 	if ((n&(1LL << (bitness - 1))) != 0) {//check high bit
@@ -84,9 +85,95 @@ void appendSeptets(vector<char>& v, size_t n) {
 	}
 }
 
+size_t readSeptets(std::istream& is, size_t& bytesRead) {
+	const size_t bitness = sizeof(size_t)*CHAR_BIT;
+	static_assert(bitness == 64, "this algorithm assumes a 64-bit system");
+	bool flg = true; //this will be set to false when the high bit of a read byte is 0
+	size_t ret = 0;
+	bytesRead = 0;
+	char next;
+	while (flg) {
+		++bytesRead;
+		//if we have more than 64 bits of length
+		if (bytesRead == 10 ||
+			(bytesRead == 9
+				&& (ret >> 57) > 1
+				)) {
+			cerr << "readSeptets: tag cannot fit in size_t" << endl;
+			throw 5;
+		}
+		is.read(&next, 1); //read next byte
+		if (!is) {
+			cerr << "readSeptets: unexpected EOF while reading tag" << endl;
+			throw 5;
+		}
+		flg = next & 0x80; //get high bit
+		next &= 0x7F; //get rid of high bit
+		ret <<= 7; //make room for 7 bits at the bottom of the output
+		ret += next; //next is def. positive because high bit is clear
+	}
+	return ret;
+}
+
+size_t readSeptets(std::istream& is) {
+	size_t bytes = 0;
+	return readSeptets(is, bytes);
+}
+
+std::string stringFromVec(const vector<char>& v) {
+	if (v.size() > 0)
+		return std::string(&v[0], v.size());
+	else
+		return std::string();
+}
+
+vector<size_t> parseOID(std::istream& is, size_t len) {
+	vector<size_t> ret;
+	if (len == 0)
+		return vector<size_t>();
+	char tmp;
+	is.read(&tmp, 1);
+	if (!is) {
+		cerr << "parseOID: unexpected EOF while reading segment" << endl;
+		throw 5;
+	}
+	//some weird decoding voodoo for the first two segments
+	//for 0-39 seg 1 is 0, seg 2 is 0-39
+	//for 40-79 seg1 is 1, seg 2 is 0-39
+	//80+, seg 1 is 2, seg 2 is (the value) - 80
+	if ((unsigned char)tmp / 40 < 2) {
+		ret.push_back((unsigned char)tmp / 40);
+		ret.push_back((unsigned char)tmp % 40);
+	}
+	else {
+		ret.push_back(2);
+		ret.push_back((unsigned char)tmp - 80);
+	}
+	size_t nextSeg = 0;
+	size_t bytesRead = 1;
+	while (bytesRead < len) {
+		size_t segBytes;
+		ret.push_back(readSeptets(is, segBytes));
+		bytesRead += segBytes;
+	}
+	return ret;
+}
+
+vector<size_t> parseOID(const vector<char>& v) {
+	std::stringstream ss(stringFromVec(v));
+	return parseOID(ss, v.size());
+}
+
+vector<char> stringToVec(const std::string& s) {
+	vector<char> ret(s.size());
+	std::copy(s.begin(), s.end(), ret.begin());
+	return ret;
+}
+
 class ObjectID {
 public:
 	ObjectID(const vector<char>& v) : _segs(parseOID(v)) {}
+	ObjectID(std::istream& is, size_t cnt) : _segs(parseOID(is, cnt)) {}
 	std::string displayForm() {
 		std::stringstream ss;
 		for (size_t i = 0; i < _segs.size() - 1; ++i) {
@@ -96,39 +183,16 @@ public:
 		return ss.str();
 	}
 	vector<char> encodedForm() {
-		const size_t bitness = sizeof(size_t)*CHAR_BIT;
-		static_assert(bitness == 64,"this algorithm assumes a 64-bit system");
- 		vector<char> ret;
-		if (_segs.size() < 2)
-			return ret;
-		ret.push_back((char)(unsigned char)(_segs[0] * 40 + _segs[1]));
-		for (size_t i = 2; i < _segs.size(); ++i) {
-			if (_segs[i] == 0) {
-				ret.push_back(0);
-				continue;
-			}
-			size_t tmp = _segs[i];
-			if ((tmp&(1LL << (bitness - 1))) != 0 ) {//check high bit
-				ret.push_back((char)(unsigned char)0x81); //we set the high bit to signal there is more
-				tmp <<= 1; //throw away high bit
-			}
-			else {//if there is no high bit, we have leading zeroes, and may have to throw away the first few septets
-				tmp <<= 1; //throw away high bit
-				if(tmp!=0)  //if we still have bits left, they'll be shifted into top septet
-					while ((tmp&(0xF7LL << 56)) == 0) //while there is nothing in the top septet
-						tmp <<= 7; //we throw away the top 7 bits
-			}
-			//once high bit is dealt with, we have 63 remaining bits, and 63=7*9
-			//so we can take 7 bits at a time until we get to the end of the number
-			//of course, some septets may have already been discarded as leading zeroes
-			while (tmp > 0) {
-				char tmp2 = tmp >> 57; //top 7 bits
-				if ((tmp & 0x01FFFFFFFFFFFFFFLL) != 0) //if there are more than 7 bits left
-					tmp2 |= 0x80; //we set the high bit to signal we are not finished
-				ret.push_back(tmp2);
-				tmp <<= 7;
-			}
+		std::stringstream ss;
+		if (_segs.size() < 2){
+			cerr << "ObjectID::encodedForm: too few segments in OID" << endl;
+			throw 5;
 		}
+		ss << ((char)(unsigned char)(_segs[0] * 40 + _segs[1]));
+		for (size_t i = 2; i < _segs.size(); ++i) {
+			appendSeptets(ss, _segs[i]);
+		}
+		vector<char> ret = stringToVec(ss.str());
 		return ret;
 	}
 	bool operator== (ObjectID rhs) {
@@ -169,13 +233,6 @@ struct PublicKey {
 struct CertificateExtension {
 
 };
-
-std::string stringFromVec(const vector<char>& v) {
-	if (v.size() > 0)
-		return std::string(&v[0], v.size());
-	else
-		return std::string();
-}
 
 class codedString {
 public:
@@ -307,6 +364,47 @@ public:
 	char getClass() const { return _cls; }
 	size_t getTag() const { return _tag; }
 	bool isConstructed() const { return _constructed; }
+	void rawOut(std::ostream& os) {
+		char lowTag = _cls << 6;
+		if (_constructed)
+			lowTag |= 0x20;
+		if (_tag >= 0x1F) {
+			os << (char)(lowTag | 0x1F);
+			appendSeptets(os, _tag);
+		}
+		else {
+			lowTag |= _tag;
+			os << lowTag;
+		}
+		size_t len = length();
+		if (len < 128) {
+			os << (char)len;
+		}
+		else {
+			char lenOfLen = 0;
+			size_t tmp = len;
+			while (tmp > 0) {
+				++lenOfLen;
+				tmp >>= CHAR_BIT;
+			}
+			os << (char)(lenOfLen|0x80); //set top bit to signal long length mode
+			len <<= (sizeof(size_t) - lenOfLen)*CHAR_BIT; //put the first nonzero octet at the top
+			for (int i = 0; i < lenOfLen; ++i) {
+				char next = len >> (CHAR_BIT*(sizeof(size_t)-1));
+				os << next;
+				len <<= CHAR_BIT;
+			}
+		}
+		if (_constructed) {
+			for (AsnObject obj : _subObj) {
+				obj.rawOut(os);
+			}
+		}
+		else {
+			if (_contents.size() > 0)
+				os.write(&_contents[0], _contents.size());
+		}
+	}
 private:
 	char _cls;
 	size_t _tag;
@@ -363,30 +461,9 @@ AsnObject parseObject(istream& is) {
 	size_t tag;
 	size_t length = 0;
 	if (lowTag == 0x1F) { //if all 5 low bits are set
-		bool flg = true; //this will be set to false when the high bit of a read byte is 0
-		int septets = 0;
-		tag = 0;
-		while (flg) {
-			++septets;
-			++preLength;
-			//if we have more than 64 bits of length
-			if (septets == 10 ||
-				(septets == 9
-					&& (tag >> 57) > 1
-					)) {
-				cerr << "parseObject: tag cannot fit in size_t" << endl;
-				return makeNull();
-			}
-			is.read(&buffer[0], 1); //read next byte
-			if (!is) {
-				cerr << "parseObject: unexpected EOF while reading tag" << endl;
-				return makeNull();
-			}
-			flg = buffer[0] & 0x80; //get high bit
-			buffer[0] &= 0x7F; //get rid of high bit
-			tag <<= 7; //make room for 7 bits at the bottom of the output
-			tag += buffer[0]; //buffer is def. positive because high bit is clear
-		}
+		size_t bytesRead;
+		tag = readSeptets(is, bytesRead);
+		preLength += bytesRead;
 	}
 	else {
 		tag = lowTag;
@@ -431,11 +508,11 @@ AsnObject parseObject(istream& is) {
 std::string oidtoString(const vector<char>& v) {
 	vector<size_t> segs = parseOID(v);
 	std::stringstream ss;
-for (size_t i = 0; i < segs.size() - 1; ++i) {
-	ss << segs[i] << ".";
-}
-ss << segs.back();
-return ss.str();
+	for (size_t i = 0; i < segs.size() - 1; ++i) {
+		ss << segs[i] << ".";
+	}
+	ss << segs.back();
+	return ss.str();
 }
 
 void printAsnObject(AsnObject obj, size_t depth = 0) {
@@ -724,21 +801,32 @@ vector<char> asnObjectToVect(AsnObject obj) {
 
 int main(int argc, const char * argv[])
 {
-	std::string fname("./wikipedia.cer");
+	std::string fname("wikipedia.cer");
 	if (argc > 1)
 		fname = std::string(argv[1]);
-	ifstream certFile(fname, ios::binary);
+	fstream certFile(fname, ios::binary | ios::in);
 	if (!certFile) {
 		cerr << "File not found." << endl;
 		return 1;
 	}
 	AsnObject cert = parseObject(certFile);
+	certFile.close();
 	printAsnObject(cert);
 	TbsCertificate tbs = parseTbsCert(cert.subObjects(0));
 	cout << displayTime(tbs.validBegin) << endl;
 	cout << displayTime(tbs.validEnd) << endl;
 	std::stringstream ss("\xDF\x8D\xF5\xB6\xFD\x6F\x0B\xDE\xAD\xBE\xEF\xBA\xDC\xAB\xDE\xAD\xBE\xEF");
 	AsnObject largeTag = parseObject(ss);
+	certFile.open("../x64/debug/test.cer", ios::binary | ios::trunc | ios::out);
+	if (!certFile) {
+		cerr << "Could not open test file for writing" << endl;
+		return 1;
+	}
+	ss.clear();
+	cert.rawOut(certFile);
+	certFile.close();
+	cert.rawOut(ss);
+	std::string str = ss.str();
     return 0;
 }
 
