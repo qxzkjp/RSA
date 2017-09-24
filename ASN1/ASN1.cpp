@@ -16,6 +16,34 @@ using std::istream;
 using std::make_shared;
 using std::shared_ptr;
 
+class ASNexception : public std::exception {
+public:
+	virtual std::string what() {
+		return "generic ASN exception";
+	}
+};
+
+class EOFexception : public ASNexception {
+public:
+	virtual std::string what() {
+		return "unexpected EOF";
+	}
+};
+
+class EncodingException : public ASNexception {
+public:
+	virtual std::string what() {
+		return "Malformed or unsupported encoding";
+	}
+};
+
+class SizeException : public ASNexception {
+public:
+	virtual std::string what() {
+		return "Parameter too large";
+	}
+};
+
 struct AsnTime {
 	int sec;
 	int min;
@@ -100,12 +128,12 @@ size_t readSeptets(std::istream& is, size_t& bytesRead) {
 				&& (ret >> 57) > 1
 				)) {
 			cerr << "readSeptets: tag cannot fit in size_t" << endl;
-			throw 5;
+			throw SizeException();
 		}
 		is.read(&next, 1); //read next byte
 		if (!is) {
 			cerr << "readSeptets: unexpected EOF while reading tag" << endl;
-			throw 5;
+			throw EOFexception();
 		}
 		flg = next & 0x80; //get high bit
 		next &= 0x7F; //get rid of high bit
@@ -135,7 +163,7 @@ vector<size_t> parseOID(std::istream& is, size_t len) {
 	is.read(&tmp, 1);
 	if (!is) {
 		cerr << "parseOID: unexpected EOF while reading segment" << endl;
-		throw 5;
+		throw EOFexception();
 	}
 	//some weird decoding voodoo for the first two segments
 	//for 0-39 seg 1 is 0, seg 2 is 0-39
@@ -186,7 +214,7 @@ public:
 		std::stringstream ss;
 		if (_segs.size() < 2){
 			cerr << "ObjectID::encodedForm: too few segments in OID" << endl;
-			throw 5;
+			throw EncodingException();
 		}
 		ss << ((char)(unsigned char)(_segs[0] * 40 + _segs[1]));
 		for (size_t i = 2; i < _segs.size(); ++i) {
@@ -227,10 +255,6 @@ private:
 };
 
 struct PublicKey {
-
-};
-
-struct CertificateExtension {
 
 };
 
@@ -278,7 +302,7 @@ public:
 		}
 		else {
 			cerr << "codedString::getWString: invalid encoding" << endl;
-			throw 5;
+			throw EncodingException();
 		}
 		return ret;
 	}
@@ -315,31 +339,13 @@ public:
 		}
 		else {
 			cerr << "codedString::getString: invalid encoding" << endl;
-			throw 5;
+			throw EncodingException();
 		}
 		return ret;
 	}
 private:
 	std::string _contents;
 	std::string _tag;
-};
-
-typedef std::pair<ObjectID, codedString> nameElement;
-typedef vector<nameElement> subName;
-typedef vector<subName> nameType;
-
-struct TbsCertificate {
-	int version;
-	vector<char> certSerial;
-	verifyPtr sigAlgId;
-	nameType issuer;
-	AsnTime validBegin;
-	AsnTime validEnd;
-	nameType subject;
-	PublicKey subjectPubKey;
-	vector<char> issuerID;
-	vector<char> subjectID;
-	vector<CertificateExtension> extensions;
 };
 
 class AsnObject {
@@ -416,6 +422,34 @@ private:
 
 typedef std::shared_ptr<AsnObject> AsnPtr;
 typedef std::shared_ptr<const AsnObject> AsnConstPtr;
+
+typedef std::pair<ObjectID, codedString> nameElement;
+typedef vector<nameElement> subName;
+typedef vector<subName> nameType;
+
+struct Validity {
+	AsnTime begin;
+	AsnTime end;
+};
+
+struct CertificateExtension {
+	ObjectID id;
+	bool critical;
+	AsnObject contents;
+};
+
+struct TbsCertificate {
+	char version;
+	vector<char> certSerial;
+	verifyPtr sigAlgId;
+	nameType issuer;
+	Validity valid;
+	nameType subject;
+	verifyPtr subjectPubKey;
+	vector<char> issuerID;
+	vector<char> subjectID;
+	vector<CertificateExtension> extensions;
+};
 
 AsnObject makeNull() {
 	return AsnObject(0, 5, 2, vector<char>(0));
@@ -515,6 +549,29 @@ std::string oidtoString(const vector<char>& v) {
 	return ss.str();
 }
 
+namespace tagNum {
+	const char boolean = 1;
+	const char integer = 2;
+	const char bitString = 3;
+	const char octetString = 4;
+	const char null = 5;
+	const char oid = 6;
+	const char utf8String = 12;
+	const char sequence = 16;
+	const char set = 17;
+	const char printableString = 19;
+	const char t61String = 20;
+	const char universalString = 28;
+	const char bmpString = 30;
+}
+
+namespace tagClass {
+	const char universal = 0;
+	const char application = 1;
+	const char contextSpecific = 2;
+	const char priv = 3;
+}
+
 void printAsnObject(AsnObject obj, size_t depth = 0) {
 	for (int i = 0; i < depth; ++i)
 		cout << "\t";
@@ -611,7 +668,7 @@ size_t intFromOctStr(vector<char> v) {
 	size_t ret = 0;
 	if (v.size() > 8) {
 		cerr << "intFromOctStr: integer too big for size_t. Use mpz function instead." << endl;
-		throw 5;
+		throw SizeException();
 	}
 	for (size_t i = 0; i< v.size(); ++i) {
 		ret <<= 8;
@@ -624,68 +681,122 @@ bool checkClassAndTag(AsnObject obj, char cls, size_t tag) {
 	return (obj.getClass() == cls && obj.getTag() == tag);
 }
 
-nameType parseName(const AsnObject& obj) {
-	nameType ret;
-	if (!checkClassAndTag(obj, 0, 16)) {
-		cerr << "parseName: name is not a sequence" << endl;
-		throw 5;
+/*********************************************************************************
+** try* and get* functions:                                                     **
+** try* functions will attempt to parse a subobject and place it in value,      **
+** returning false if it is not found (used for optional/default values).       **
+** get* functions attempt to parse a subobject and place it in value, throwing  **
+** an ASNexception if it is not found (used for required values).               **
+** both kinds of functions take an object and an index for the subobject, and   **
+** increment the index if the object is found.                                  **
+*********************************************************************************/
+
+bool tryVersion(const AsnObject& obj, size_t& index, char& value) {
+	if (obj.numSubObjects() - 1 < index)
+		return false;
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, 2, 0)) { //context-specific 0
+		return false;
 	}
-	for (AsnObject sub : obj.subObjects()) {
-		if (!checkClassAndTag(sub, 0, 17)) {
-			cerr << "parseName: sub-name is not a set" << endl;
-			throw 5;
+	if (sub.numSubObjects() != 1) {
+		return false;
+	}
+	if (!checkClassAndTag(sub.subObjects(0), 0, 2)) { //integer
+		return false;
+	}
+	size_t ver = intFromOctStr(sub.subObjects(0).contents());
+	if (ver > 2 || ver < 0) {
+		throw ASNexception();
+	}
+	value = (char)ver;
+	++index;
+	return true;
+}
+
+//serial is handled like an object string, despite actually being an integer.
+//This is because it might be up to 20 bytes in length, and we don't need to do arithmetic on it
+void getSerial(const AsnObject& obj, size_t& index, vector<char>& value) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, 0, 2)) //integer
+		throw ASNexception();
+	if (sub.contents().size() == 0)
+		throw ASNexception();
+	++index;
+	value = sub.contents();
+}
+
+void getName(const AsnObject& obj, size_t& index, nameType& value) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	nameType ret;
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::sequence)) {
+		cerr << "getName: name is not a sequence" << endl;
+		throw ASNexception();
+	}
+	for (AsnObject subsub : sub.subObjects()) {
+		if (!checkClassAndTag(subsub, tagClass::universal, tagNum::set)) {
+			cerr << "getName: sub-name is not a set" << endl;
+			throw ASNexception();
 		}
 		subName tmp;
-		for (AsnObject subsub : sub.subObjects()) {
-			//nameElement elem;
-			if (!checkClassAndTag(subsub, 0, 16)) {
-				cerr << "parseName: name element is not a sequence" << endl;
-				throw 5;
+		for (AsnObject subsubsub : subsub.subObjects()) {
+			if (!checkClassAndTag(subsubsub, tagClass::universal, tagNum::sequence)) {
+				cerr << "getName: name element is not a sequence" << endl;
+				throw ASNexception();
 			}
-			if(subsub.numSubObjects()!=2) {
-				cerr << "parseName: name element is not a pair" << endl;
-				throw 5;
+			if (subsubsub.numSubObjects() != 2) {
+				cerr << "getName: name element is not a pair" << endl;
+				throw ASNexception();
 			}
-			if (!checkClassAndTag(subsub.subObjects(0), 0, 6)) {
-				cerr << "parseName: name element has no OID" << endl;
-				throw 5;
+			const AsnObject& OID = subsubsub.subObjects(0);
+			const AsnObject& val = subsubsub.subObjects(1);
+			if (!checkClassAndTag(OID, tagClass::universal, tagNum::oid)) {
+				cerr << "getName: name element has no OID" << endl;
+				throw ASNexception();
 			}
 			codedString str;
-			if (subsub.subObjects(1).getClass() != 0) {
-				cerr << "parseName: name element has no value" << endl;
-				throw 5;
+			if (val.getClass() != tagClass::universal) {
+				cerr << "getName: name element has no value" << endl;
+				throw ASNexception();
 			}
-			
-			if (subsub.subObjects(1).getTag() == 12) {
-				str = codedString(subsub.subObjects(1).contents(), "UTF8");
+
+			if (val.getTag() == tagNum::utf8String) {
+				str = codedString(val.contents(), "UTF8");
 			}
-			else if (subsub.subObjects(1).getTag() == 19) {
-				str = codedString(subsub.subObjects(1).contents(), "ASCII");
+			else if (val.getTag() == tagNum::printableString) {
+				str = codedString(val.contents(), "ASCII");
 			}
-			else if (subsub.subObjects(1).getTag() == 30) {
-				str = codedString(subsub.subObjects(1).contents(), "BMP");
+			else if (val.getTag() == tagNum::bmpString) {
+				str = codedString(val.contents(), "BMP");
 			}
 			else {
-				cerr << "parseName: invalid encoding for name element value" << endl;
-				throw 5;
+				cerr << "getName: invalid encoding for name element value" << endl;
+				throw EncodingException();
 			}
 			tmp.push_back(
 				nameElement(
-					ObjectID(subsub.subObjects(0).contents()),
+					ObjectID(OID.contents()),
 					str)
 			);
 		}
 		ret.push_back(tmp);
 	}
-	return ret;
+	value = ret;
+	++index;
 }
 
-AsnTime parseAsnTime(AsnObject obj) {
-	if (!checkClassAndTag(obj, 0, 23)) {
-		cerr << "parseAsnTime: object is not a UTCTime" << endl;
-		throw 5;
+void getAsnTime(const AsnObject& obj, size_t& index, AsnTime& value) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, 0, 23)) {
+		cerr << "getAsnTime: object is not a UTCTime" << endl;
+		throw ASNexception();
 	}
-	const vector<char>& v = obj.contents();
+	const vector<char>& v = sub.contents();
 	AsnTime ret;
 	size_t pad = 0;
 	if (v.back() == 'Z') {
@@ -694,11 +805,11 @@ AsnTime parseAsnTime(AsnObject obj) {
 		pad = 1;
 	}
 	else {
-		cerr << "parseUtcTime: non-UTC timezones not currently supported" << endl;
-		throw 5;
+		cerr << "getAsnTime: non-UTC timezones not currently supported" << endl;
+		throw EncodingException();
 	}
 	if (v.size() - pad >= 10) {
-		std::string digits(3,0);
+		std::string digits(3, 0);
 		digits[0] = v[0];
 		digits[1] = v[1];
 		ret.year = atoi(&digits[0]);
@@ -724,39 +835,86 @@ AsnTime parseAsnTime(AsnObject obj) {
 			ret.sec = 0;
 			ret.hasSeconds = false;
 		}
-	}else {
-		cerr << "parseUtcTime: invalid format" << endl;
-		throw 5;
 	}
-	return ret;
+	else {
+		cerr << "getAsnTime: invalid format" << endl;
+		throw EncodingException();
+	}
+	value = ret;
+	++index;
 }
 
+void getValidity(const AsnObject& obj, size_t& index, Validity& value) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	Validity ret;
+	size_t i = 0;
+	getAsnTime(sub, i, ret.begin);
+	getAsnTime(sub, i, ret.end);
+	value = ret;
+	++index;
+}
+
+bool tryBitString(const AsnObject& obj, size_t& index, vector<char>& value) {
+	if (obj.numSubObjects() - 1 < index)
+		return false;
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::bitString))
+		return false;
+	value = sub.contents();
+	++index;
+	return true;
+}
+
+//this function only exists to provide code re-use for getIssuerID/getSubjectID
+bool tryUniqueID(const AsnObject& obj, size_t& index, vector<char>& value, size_t tag) {
+	if (obj.numSubObjects() - 1 < index)
+		return false;
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, 2, tag)) //context-specific tag (issuerID/subjectID)
+		return false;
+	size_t i = 0;
+	vector<char> ret;
+	tryBitString(sub, index, ret);
+	if (ret.size() > 0)
+		value = ret;
+	else
+		return false;
+	++index;
+	return true;
+}
+
+bool tryIssuerID(const AsnObject& obj, size_t& index, vector<char>& value) {
+	return (tryUniqueID(obj, index, value, 1));
+}
+
+bool trySubjectID(const AsnObject& obj, size_t& index, vector<char>& value) {
+	return (tryUniqueID(obj, index, value, 2));
+}
+
+//TODO: version, unique IDs and extensions are all optional. completely re-do this code
 TbsCertificate parseTbsCert(const AsnObject& obj) {
 	TbsCertificate ret;
-	bool extensions = true;
-	if (obj.subObjects().size() < 7)
-		throw 5;	//thow random object and die if fields are missing
-	if (obj.subObjects().size() < 7)
-		extensions = false;
-	if (!checkClassAndTag(obj.subObjects(0), 2, 0)) {
-		cerr << "parseTbsCert: version not found" << endl;
-		throw 5;
-	}
-	if(obj.numSubObjects()==0) {
-		cerr << "parseTbsCert: version malformed" << endl;
-		throw 5;
-	}
-	ret.version = (int)intFromOctStr(obj.subObjects(0).subObjects(0).contents());
-	if (!checkClassAndTag(obj.subObjects(1), 0, 2)) {
-		cerr << "parseTbsCert: serial number not found" << endl;
-		throw 5;
-	}
-	ret.certSerial = obj.subObjects(1).contents();
+	if (obj.subObjects().size() < 6)
+		throw ASNexception();	//thow exception if fields are missing
+	ret.version = 0;
+	size_t index = 0;
+	tryVersion(obj, index, ret.version);
+	getSerial(obj, index, ret.certSerial);
+	//TODO: parse signature algorithm properly
+	//getSigAlg(obj,index,ret.sigAlgId);
 	ret.sigAlgId = nullptr;
-	ret.issuer = parseName(obj.subObjects(3));
-	ret.subject = parseName(obj.subObjects(5));
-	ret.validBegin = parseAsnTime(obj.subObjects(4).subObjects(0));
-	ret.validEnd = parseAsnTime(obj.subObjects(4).subObjects(1));
+	++index;
+	getName(obj, index, ret.issuer);
+	getValidity(obj, index, ret.valid);
+	getName(obj, index, ret.subject);
+	//getPubKey(obj, index, ret.subjectPubKey)
+	ret.subjectPubKey = nullptr;
+	++index;
+	tryIssuerID(obj, index, ret.issuerID);
+	trySubjectID(obj, index, ret.subjectID);
+	//extensions
 	return ret;
 }
 
@@ -813,8 +971,8 @@ int main(int argc, const char * argv[])
 	certFile.close();
 	printAsnObject(cert);
 	TbsCertificate tbs = parseTbsCert(cert.subObjects(0));
-	cout << displayTime(tbs.validBegin) << endl;
-	cout << displayTime(tbs.validEnd) << endl;
+	//cout << displayTime(tbs.valid.begin) << endl;
+	//cout << displayTime(tbs.valid.end) << endl;
 	std::stringstream ss("\xDF\x8D\xF5\xB6\xFD\x6F\x0B\xDE\xAD\xBE\xEF\xBA\xDC\xAB\xDE\xAD\xBE\xEF");
 	AsnObject largeTag = parseObject(ss);
 	certFile.open("../x64/debug/test.cer", ios::binary | ios::trunc | ios::out);

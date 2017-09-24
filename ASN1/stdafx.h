@@ -17,5 +17,6 @@
 #include <map>
 #include <ctime>
 #include <windows.h>
+#include <exception>
 
 // TODO: reference additional headers your program requires here
