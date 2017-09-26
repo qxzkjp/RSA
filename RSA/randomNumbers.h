@@ -1,5 +1,18 @@
-#include "Buffer.h"
 #include <vector>
+
+class CryptContext
+{
+public:
+	CryptContext();
+	~CryptContext();
+	HCRYPTPROV& handle();
+	gmp_randstate_t& gmpState();
+private:
+	HCRYPTPROV _h;
+	gmp_randstate_t _s;
+};
+
+extern CryptContext globalContext;
 
 int getRandomBuffer(std::vector<char>& buf, HCRYPTPROV hProvIn = NULL);
 std::vector<char> getRandomBuffer(size_t n, HCRYPTPROV hProvIn = NULL);

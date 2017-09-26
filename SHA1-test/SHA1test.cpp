@@ -1,11 +1,9 @@
- // SHA1.cpp : Defines the entry point for the console application.
+// SHA1.cpp : Defines the entry point for the console application.
 //
 
 #include "stdafx.h"
-#include "../RSA/Buffer.h"
 #include "../RSA/interfaces.h"
-#include "PointedBuffer.h"
-#include "Sha1Class.h"
+#include "../SHA1/Sha1Class.h"
 
 void printVec(std::vector<char> buf, std::ostream& os = std::cout) {
 	std::ios::fmtflags flg(os.flags());
@@ -20,7 +18,7 @@ void printVec(std::vector<char> buf, std::ostream& os = std::cout) {
 	os.flags(flg);
 }
 
-Buffer bufFromHexStr(std::string hex){
+Buffer bufFromHexStr(std::string hex) {
 	if (hex.length() % 2 != 0)
 		return Buffer(0);
 	Buffer ret(hex.size() / 2);
@@ -66,7 +64,7 @@ bool testSha1(std::vector<std::vector<char>> msg, Buffer expected, size_t count 
 bool testSha1(std::vector<std::shared_ptr<std::istream>> msg, Buffer expected, std::ostream* os = nullptr) {
 	Sha1Class sha;
 	for (auto i = msg.begin(); i != msg.end(); ++i) {
-			sha.addData(**i);
+		sha.addData(**i);
 	}
 	std::vector<char> out = sha.finalise();
 	if (os) {
@@ -128,7 +126,7 @@ std::shared_ptr<std::stringstream> strptr(const char* str) {
 std::vector<char> str2vec(std::string str) {
 	std::vector<char> v;
 	v.resize(str.size());
-	if(str.size()>0)
+	if (str.size()>0)
 		memcpy(&v[0], &str[0], str.size());
 	return v;
 }
@@ -238,5 +236,5 @@ int main()
 		std::cout << std::endl << "Some failures.";
 	std::cout << std::endl;
 	system("pause");
-    return 0;
+	return 0;
 }

@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "PointedBuffer.h"
+#include "../SHA1/Sha1Class.h"
 
 PointedBuffer::PointedBuffer(size_t n) : Buffer(n), _pos(0) {}
 

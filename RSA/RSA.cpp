@@ -3,14 +3,10 @@
 
 #include "stdafx.h"
 #include <memory>
-#include "CryptContext.h"
 #include "randomNumbers.h"
-#include "Buffer.h"
 #include "mpzConvert.h"
 #include "RsaDecryptor.h"
 #include "../SHA1/Sha1Class.h"
-#include <cstring>
-#include "memoryhelper.h"
 #include "mgf1.h"
 
 

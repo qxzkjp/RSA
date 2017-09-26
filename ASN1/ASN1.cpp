@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "../RSA/interfaces.h"
+#include "ASN1.h"
 
 using std::cout;
 using std::cin;
@@ -15,45 +16,6 @@ using std::fstream;
 using std::istream;
 using std::make_shared;
 using std::shared_ptr;
-
-class ASNexception : public std::exception {
-public:
-	virtual std::string what() {
-		return "generic ASN exception";
-	}
-};
-
-class EOFexception : public ASNexception {
-public:
-	virtual std::string what() {
-		return "unexpected EOF";
-	}
-};
-
-class EncodingException : public ASNexception {
-public:
-	virtual std::string what() {
-		return "Malformed or unsupported encoding";
-	}
-};
-
-class SizeException : public ASNexception {
-public:
-	virtual std::string what() {
-		return "Parameter too large";
-	}
-};
-
-struct AsnTime {
-	int sec;
-	int min;
-	int hour;
-	int day;
-	int month;
-	int year;
-	int tzMin;
-	bool hasSeconds;
-};
 
 void appendSeptets(std::ostream& os, size_t n) {
 	const size_t bitness = sizeof(size_t)*CHAR_BIT;
@@ -158,7 +120,7 @@ std::string stringFromVec(const vector<char>& v) {
 vector<size_t> parseOID(std::istream& is, size_t len) {
 	vector<size_t> ret;
 	if (len == 0)
-		return vector<size_t>();
+		return vector<size_t>(0);
 	char tmp;
 	is.read(&tmp, 1);
 	if (!is) {
@@ -198,264 +160,9 @@ vector<char> stringToVec(const std::string& s) {
 	return ret;
 }
 
-class ObjectID {
-public:
-	ObjectID(const vector<char>& v) : _segs(parseOID(v)) {}
-	ObjectID(std::istream& is, size_t cnt) : _segs(parseOID(is, cnt)) {}
-	std::string displayForm() {
-		std::stringstream ss;
-		for (size_t i = 0; i < _segs.size() - 1; ++i) {
-			ss << _segs[i] << ".";
-		}
-		ss << _segs.back();
-		return ss.str();
-	}
-	vector<char> encodedForm() {
-		std::stringstream ss;
-		if (_segs.size() < 2){
-			cerr << "ObjectID::encodedForm: too few segments in OID" << endl;
-			throw EncodingException();
-		}
-		ss << ((char)(unsigned char)(_segs[0] * 40 + _segs[1]));
-		for (size_t i = 2; i < _segs.size(); ++i) {
-			appendSeptets(ss, _segs[i]);
-		}
-		vector<char> ret = stringToVec(ss.str());
-		return ret;
-	}
-	bool operator== (ObjectID rhs) {
-		return _segs == rhs._segs;
-	}
-	//lexicographical order
-	bool operator <(ObjectID rhs) {
-		vector<size_t>::iterator checkIt, endIt;
-		auto it1 = _segs.begin();
-		auto it2 = rhs._segs.begin();
-		if (_segs.size() <= rhs._segs.size()) {
-			checkIt = _segs.begin();
-			endIt = _segs.end();
-		}
-		else {
-			checkIt = rhs._segs.begin();
-			endIt = rhs._segs.end();
-		}
-		for (; checkIt != endIt; ++checkIt, ++it1, ++it2) {
-			if (*it1 < *it2)
-				return true;
-			if (*it1 > *it2)
-				return false;
-		}
-		if (_segs.size() < rhs._segs.size())
-			return true;
-		else
-			return false;
-	}
-private:
-	std::vector<size_t> _segs;
-};
-
-struct PublicKey {
-
-};
-
-class codedString {
-public:
-	codedString(vector<char> bytesIn = vector<char>(), std::string tag = "UTF8") : _contents(stringFromVec(bytesIn)), _tag(tag) {
-	}
-	const std::wstring getWString() {
-		std::wstring ret;
-		if (_tag == "ASCII") {
-			for (int i = 0; i < _contents.size(); ++i) {
-				ret.push_back((unsigned char)_contents[i]); //no sign extension
-			}
-		}
-		else if (_tag == "BMP") {
-			size_t len = _contents.size()/2;
-			for (int i = 0; i < len; ++i) {
-				//big-endian encoding (as in ASN.1)
-				ret.push_back(
-					((wchar_t)(unsigned char)_contents[i * 2] << 8)
-					+ (unsigned char)_contents[i * 2 + 1]
-				);
-			}
-		}
-		else if (_tag == "UTF8") {
-			//get required buffer-size
-			int wsize = MultiByteToWideChar(
-				CP_UTF8,
-				NULL,
-				&_contents[0],
-				(int)_contents.size(),
-				nullptr,
-				0
-			);
-			//convert UTF-8 to wide_char
-			ret.resize(wsize);
-			MultiByteToWideChar(
-				CP_UTF8,
-				NULL,
-				&_contents[0],
-				(int)_contents.size(),
-				&ret[0],
-				wsize
-			);
-		}
-		else {
-			cerr << "codedString::getWString: invalid encoding" << endl;
-			throw EncodingException();
-		}
-		return ret;
-	}
-	const std::string getString() {
-		std::string ret;
-		if (_tag == "ASCII" || _tag == "UTF8") {
-			ret = _contents;
-		}
-		else if (_tag == "BMP") {
-			std::wstring tmp = getWString();
-			//get required buffer-size
-			int len = WideCharToMultiByte(
-				CP_UTF8,
-				MB_PRECOMPOSED,
-				&tmp[0],
-				(int)tmp.size(),
-				nullptr,
-				0,
-				NULL,
-				NULL
-			);
-			//convert wchar to UTF-8
-			ret.resize(len);
-			WideCharToMultiByte(
-				CP_UTF8,
-				MB_PRECOMPOSED,
-				&tmp[0],
-				(int)tmp.size(),
-				&ret[0],
-				len,
-				NULL,
-				NULL
-			);
-		}
-		else {
-			cerr << "codedString::getString: invalid encoding" << endl;
-			throw EncodingException();
-		}
-		return ret;
-	}
-private:
-	std::string _contents;
-	std::string _tag;
-};
-
-class AsnObject {
-public:
-	AsnObject(char cls, size_t tag, size_t preLength, vector<char> v) : _cls(cls), _tag(tag), _preLength(preLength), _constructed(false), _contents(v) {};
-	AsnObject(char cls, size_t tag, size_t preLength, vector<AsnObject> v) : _cls(cls), _tag(tag), _preLength(preLength), _constructed(true), _subObj(v) {};
-	size_t length() const {
-		size_t len = 0;
-		for (AsnObject a : _subObj) {
-			len += a.rawLength();
-		}
-		len += _contents.size();
-		return len;
-	}
-	size_t rawLength() const {
-		return length() + _preLength;
-	}
-	const vector<char>& contents() const { return _contents; }
-	const vector<AsnObject>& subObjects() const { return _subObj; }
-	const AsnObject& subObjects(size_t n) const { return _subObj.at(n); }
-	size_t numSubObjects() const { return _subObj.size(); }
-	char getClass() const { return _cls; }
-	size_t getTag() const { return _tag; }
-	bool isConstructed() const { return _constructed; }
-	void rawOut(std::ostream& os) {
-		char lowTag = _cls << 6;
-		if (_constructed)
-			lowTag |= 0x20;
-		if (_tag >= 0x1F) {
-			os << (char)(lowTag | 0x1F);
-			appendSeptets(os, _tag);
-		}
-		else {
-			lowTag |= _tag;
-			os << lowTag;
-		}
-		size_t len = length();
-		if (len < 128) {
-			os << (char)len;
-		}
-		else {
-			char lenOfLen = 0;
-			size_t tmp = len;
-			while (tmp > 0) {
-				++lenOfLen;
-				tmp >>= CHAR_BIT;
-			}
-			os << (char)(lenOfLen|0x80); //set top bit to signal long length mode
-			len <<= (sizeof(size_t) - lenOfLen)*CHAR_BIT; //put the first nonzero octet at the top
-			for (int i = 0; i < lenOfLen; ++i) {
-				char next = len >> (CHAR_BIT*(sizeof(size_t)-1));
-				os << next;
-				len <<= CHAR_BIT;
-			}
-		}
-		if (_constructed) {
-			for (AsnObject obj : _subObj) {
-				obj.rawOut(os);
-			}
-		}
-		else {
-			if (_contents.size() > 0)
-				os.write(&_contents[0], _contents.size());
-		}
-	}
-private:
-	char _cls;
-	size_t _tag;
-	size_t _preLength;
-	bool _constructed;
-	vector<char> _contents;
-	vector<AsnObject> _subObj;
-};
-
-typedef std::shared_ptr<AsnObject> AsnPtr;
-typedef std::shared_ptr<const AsnObject> AsnConstPtr;
-
-typedef std::pair<ObjectID, codedString> nameElement;
-typedef vector<nameElement> subName;
-typedef vector<subName> nameType;
-
-struct Validity {
-	AsnTime begin;
-	AsnTime end;
-};
-
-struct CertificateExtension {
-	ObjectID id;
-	bool critical;
-	AsnObject contents;
-};
-
-struct TbsCertificate {
-	char version;
-	vector<char> certSerial;
-	verifyPtr sigAlgId;
-	nameType issuer;
-	Validity valid;
-	nameType subject;
-	verifyPtr subjectPubKey;
-	vector<char> issuerID;
-	vector<char> subjectID;
-	vector<CertificateExtension> extensions;
-};
-
 AsnObject makeNull() {
 	return AsnObject(0, 5, 2, vector<char>(0));
 }
-
-AsnObject parseObject(istream& is);
 
 AsnObject getConstructedObject(istream& is, char cls, size_t tag, size_t preLength, size_t length) {
 	//TODO: inmplement this function
@@ -561,6 +268,8 @@ namespace tagNum {
 	const char set = 17;
 	const char printableString = 19;
 	const char t61String = 20;
+	const char IA5String = 22;
+	const char utcTime = 23;
 	const char universalString = 28;
 	const char bmpString = 30;
 }
@@ -572,7 +281,7 @@ namespace tagClass {
 	const char priv = 3;
 }
 
-void printAsnObject(AsnObject obj, size_t depth = 0) {
+void printAsnObject(AsnObject obj, size_t depth) {
 	for (int i = 0; i < depth; ++i)
 		cout << "\t";
 	bool knownTag = false;
@@ -727,6 +436,97 @@ void getSerial(const AsnObject& obj, size_t& index, vector<char>& value) {
 	value = sub.contents();
 }
 
+ObjectID getOID(const AsnObject& obj, size_t& index) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::oid)) {
+		cerr << "getOID: object is not an OID" << endl;
+		throw ASNexception();
+	}
+	++index;
+	return ObjectID(sub.contents());
+}
+
+void getOID(const AsnObject& obj, size_t& index, ObjectID& value) {
+	value = getOID(obj, index);
+}
+
+codedString getString(const AsnObject& obj, size_t& index) {
+	codedString value;
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (sub.getClass() != tagClass::universal) {
+		cerr << "getString: object is not a string" << endl;
+		throw ASNexception();
+	}
+	codedString str;
+	if (sub.getTag() == tagNum::utf8String) {
+		value = codedString(sub.contents(), "UTF8");
+	}
+	else if (sub.getTag() == tagNum::printableString || sub.getTag() == tagNum::IA5String) {
+		value = codedString(sub.contents(), "ASCII");
+	}
+	else if (sub.getTag() == tagNum::bmpString) {
+		value = codedString(sub.contents(), "BMP");
+	}
+	else {
+		cerr << "getString: unrecognised encoding" << endl;
+		throw EncodingException();
+	}
+	++index;
+	return value;
+}
+
+void getString(const AsnObject& obj, size_t& index, codedString& value) {
+	value = getString(obj, index);
+}
+
+nameElement getNameElement(const AsnObject& obj, size_t& index) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::sequence)) {
+		cerr << "getName: name element is not a sequence" << endl;
+		throw ASNexception();
+	}
+	if (sub.numSubObjects() != 2) {
+		cerr << "getName: name element is not a pair" << endl;
+		throw ASNexception();
+	}
+	size_t i = 0;
+	ObjectID OID = getOID(sub, i);
+	codedString str= getString(sub, i);
+	++index;
+	return nameElement(OID, str);
+}
+
+void getNameElement(const AsnObject& obj, size_t& index, nameElement& value) {
+	value = getNameElement(obj, index);
+}
+
+subName getSubName(const AsnObject& obj, size_t& index) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::set)) {
+		cerr << "getName: sub-name is not a set" << endl;
+		throw ASNexception();
+	}
+	subName ret;
+	size_t i = 0;
+	while (i < sub.numSubObjects()) {
+		ret.push_back(getNameElement(sub, i));
+	}
+	++index;
+	return ret;
+}
+
+void getSubName(const AsnObject& obj, size_t& index, subName& value) {
+	value = getSubName(obj,index);
+}
+
 void getName(const AsnObject& obj, size_t& index, nameType& value) {
 	if (obj.numSubObjects() - 1 < index)
 		throw ASNexception();
@@ -736,53 +536,9 @@ void getName(const AsnObject& obj, size_t& index, nameType& value) {
 		cerr << "getName: name is not a sequence" << endl;
 		throw ASNexception();
 	}
-	for (AsnObject subsub : sub.subObjects()) {
-		if (!checkClassAndTag(subsub, tagClass::universal, tagNum::set)) {
-			cerr << "getName: sub-name is not a set" << endl;
-			throw ASNexception();
-		}
-		subName tmp;
-		for (AsnObject subsubsub : subsub.subObjects()) {
-			if (!checkClassAndTag(subsubsub, tagClass::universal, tagNum::sequence)) {
-				cerr << "getName: name element is not a sequence" << endl;
-				throw ASNexception();
-			}
-			if (subsubsub.numSubObjects() != 2) {
-				cerr << "getName: name element is not a pair" << endl;
-				throw ASNexception();
-			}
-			const AsnObject& OID = subsubsub.subObjects(0);
-			const AsnObject& val = subsubsub.subObjects(1);
-			if (!checkClassAndTag(OID, tagClass::universal, tagNum::oid)) {
-				cerr << "getName: name element has no OID" << endl;
-				throw ASNexception();
-			}
-			codedString str;
-			if (val.getClass() != tagClass::universal) {
-				cerr << "getName: name element has no value" << endl;
-				throw ASNexception();
-			}
-
-			if (val.getTag() == tagNum::utf8String) {
-				str = codedString(val.contents(), "UTF8");
-			}
-			else if (val.getTag() == tagNum::printableString) {
-				str = codedString(val.contents(), "ASCII");
-			}
-			else if (val.getTag() == tagNum::bmpString) {
-				str = codedString(val.contents(), "BMP");
-			}
-			else {
-				cerr << "getName: invalid encoding for name element value" << endl;
-				throw EncodingException();
-			}
-			tmp.push_back(
-				nameElement(
-					ObjectID(OID.contents()),
-					str)
-			);
-		}
-		ret.push_back(tmp);
+	size_t i = 0;
+	while (i < sub.numSubObjects()) {
+		ret.push_back(getSubName(sub, i));
 	}
 	value = ret;
 	++index;
@@ -893,7 +649,47 @@ bool trySubjectID(const AsnObject& obj, size_t& index, vector<char>& value) {
 	return (tryUniqueID(obj, index, value, 2));
 }
 
-//TODO: version, unique IDs and extensions are all optional. completely re-do this code
+//TODO: eliminate this copy
+AsnObject getObject(const AsnObject& obj, size_t& index) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	std::stringstream ss(stringFromVec(sub.contents()));
+	AsnObject ret = parseObject(ss);
+	++index;
+	return ret;
+}
+
+bool tryBool(const AsnObject& obj, size_t& index, bool& value) {
+	if (obj.numSubObjects() - 1 < index)
+		return false;
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::boolean))
+		return false;
+	if (sub.contents().size() != 1)
+		throw ASNexception();
+	++index;
+	return sub.contents()[0] == 0xFF;
+}
+
+CertificateExtension getExtension(const AsnObject& obj, size_t& index) {
+	if (obj.numSubObjects() - 1 < index)
+		throw ASNexception();
+	const AsnObject& sub = obj.subObjects(index);
+	if (!checkClassAndTag(sub, tagClass::universal, tagNum::sequence))
+		throw ASNexception();
+	if (sub.numSubObjects() != 2 && sub.numSubObjects() != 3)
+		throw ASNexception();
+	size_t i = 0;
+	ObjectID OID = getOID(sub, i);
+	bool critical = false;
+	tryBool(sub, i, critical);
+	AsnObject ext = getObject(sub, i);
+	++index;
+	return {OID, critical, ext};
+}
+
+//TODO: extensions
 TbsCertificate parseTbsCert(const AsnObject& obj) {
 	TbsCertificate ret;
 	if (obj.subObjects().size() < 6)
@@ -915,6 +711,19 @@ TbsCertificate parseTbsCert(const AsnObject& obj) {
 	tryIssuerID(obj, index, ret.issuerID);
 	trySubjectID(obj, index, ret.subjectID);
 	//extensions
+	if (index != obj.numSubObjects()) {
+		const AsnObject& sub = obj.subObjects(index);
+		if (!checkClassAndTag(sub, tagClass::contextSpecific, 3)) //context-specific 3 is an extension list
+			throw ASNexception();
+		if (sub.numSubObjects() == 0)
+			throw ASNexception();
+		const AsnObject& extensions = sub.subObjects(0);
+		if (!checkClassAndTag(obj, tagClass::universal, tagNum::sequence)) //extension list is an explicitly tagged sequence
+			throw ASNexception();
+		size_t i = 0;
+		while (i < extensions.numSubObjects())
+			ret.extensions.push_back(getExtension(extensions, i));
+	}
 	return ret;
 }
 
@@ -957,34 +766,231 @@ vector<char> asnObjectToVect(AsnObject obj) {
 	return vector<char>(0);
 }
 
-int main(int argc, const char * argv[])
-{
-	std::string fname("wikipedia.cer");
-	if (argc > 1)
-		fname = std::string(argv[1]);
-	fstream certFile(fname, ios::binary | ios::in);
-	if (!certFile) {
-		cerr << "File not found." << endl;
-		return 1;
+ObjectID::ObjectID(const vector<char>& v) : _segs(parseOID(v)) {}
+ObjectID::ObjectID(std::istream& is, size_t cnt) : _segs(parseOID(is, cnt)) {}
+std::string ObjectID::displayForm() {
+	std::stringstream ss;
+	for (size_t i = 0; i < _segs.size() - 1; ++i) {
+		ss << _segs[i] << ".";
 	}
-	AsnObject cert = parseObject(certFile);
-	certFile.close();
-	printAsnObject(cert);
-	TbsCertificate tbs = parseTbsCert(cert.subObjects(0));
-	//cout << displayTime(tbs.valid.begin) << endl;
-	//cout << displayTime(tbs.valid.end) << endl;
-	std::stringstream ss("\xDF\x8D\xF5\xB6\xFD\x6F\x0B\xDE\xAD\xBE\xEF\xBA\xDC\xAB\xDE\xAD\xBE\xEF");
-	AsnObject largeTag = parseObject(ss);
-	certFile.open("../x64/debug/test.cer", ios::binary | ios::trunc | ios::out);
-	if (!certFile) {
-		cerr << "Could not open test file for writing" << endl;
-		return 1;
-	}
-	ss.clear();
-	cert.rawOut(certFile);
-	certFile.close();
-	cert.rawOut(ss);
-	std::string str = ss.str();
-    return 0;
+	ss << _segs.back();
+	return ss.str();
 }
 
+vector<char> ObjectID::encodedForm() {
+	std::stringstream ss;
+	if (_segs.size() < 2) {
+		cerr << "ObjectID::encodedForm: too few segments in OID" << endl;
+		throw EncodingException();
+	}
+	ss << ((char)(unsigned char)(_segs[0] * 40 + _segs[1]));
+	for (size_t i = 2; i < _segs.size(); ++i) {
+		appendSeptets(ss, _segs[i]);
+	}
+	vector<char> ret = stringToVec(ss.str());
+	return ret;
+}
+
+bool ObjectID::operator== (ObjectID rhs) {
+	return _segs == rhs._segs;
+}
+
+//lexicographical order
+bool ObjectID::operator <(ObjectID rhs) {
+	vector<size_t>::iterator checkIt, endIt;
+	auto it1 = _segs.begin();
+	auto it2 = rhs._segs.begin();
+	if (_segs.size() <= rhs._segs.size()) {
+		checkIt = _segs.begin();
+		endIt = _segs.end();
+	}
+	else {
+		checkIt = rhs._segs.begin();
+		endIt = rhs._segs.end();
+	}
+	for (; checkIt != endIt; ++checkIt, ++it1, ++it2) {
+		if (*it1 < *it2)
+			return true;
+		if (*it1 > *it2)
+			return false;
+	}
+	if (_segs.size() < rhs._segs.size())
+		return true;
+	else
+		return false;
+}
+
+codedString::codedString(vector<char> bytesIn, std::string tag) : _contents(stringFromVec(bytesIn)), _tag(tag) {
+}
+
+const std::wstring codedString::getWString() {
+	std::wstring ret;
+	if (_tag == "ASCII") {
+		for (int i = 0; i < _contents.size(); ++i) {
+			ret.push_back((unsigned char)_contents[i]); //no sign extension
+		}
+	}
+	else if (_tag == "BMP") {
+		size_t len = _contents.size() / 2;
+		for (int i = 0; i < len; ++i) {
+			//big-endian encoding (as in ASN.1)
+			ret.push_back(
+				((wchar_t)(unsigned char)_contents[i * 2] << 8)
+				+ (unsigned char)_contents[i * 2 + 1]
+			);
+		}
+	}
+	else if (_tag == "UTF8") {
+		//get required buffer-size
+		int wsize = MultiByteToWideChar(
+			CP_UTF8,
+			NULL,
+			&_contents[0],
+			(int)_contents.size(),
+			nullptr,
+			0
+		);
+		//convert UTF-8 to wide_char
+		ret.resize(wsize);
+		MultiByteToWideChar(
+			CP_UTF8,
+			NULL,
+			&_contents[0],
+			(int)_contents.size(),
+			&ret[0],
+			wsize
+		);
+	}
+	else {
+		cerr << "codedString::getWString: invalid encoding" << endl;
+		throw EncodingException();
+	}
+	return ret;
+}
+
+const std::string codedString::getString() {
+	std::string ret;
+	if (_tag == "ASCII" || _tag == "UTF8") {
+		ret = _contents;
+	}
+	else if (_tag == "BMP") {
+		std::wstring tmp = getWString();
+		//get required buffer-size
+		int len = WideCharToMultiByte(
+			CP_UTF8,
+			MB_PRECOMPOSED,
+			&tmp[0],
+			(int)tmp.size(),
+			nullptr,
+			0,
+			NULL,
+			NULL
+		);
+		//convert wchar to UTF-8
+		ret.resize(len);
+		WideCharToMultiByte(
+			CP_UTF8,
+			MB_PRECOMPOSED,
+			&tmp[0],
+			(int)tmp.size(),
+			&ret[0],
+			len,
+			NULL,
+			NULL
+		);
+	}
+	else {
+		cerr << "codedString::getString: invalid encoding" << endl;
+		throw EncodingException();
+	}
+	return ret;
+}
+
+AsnObject::AsnObject(char cls, size_t tag, size_t preLength, vector<char> v) : _cls(cls), _tag(tag), _preLength(preLength), _constructed(false), _contents(v) {
+};
+
+AsnObject::AsnObject(char cls, size_t tag, size_t preLength, vector<AsnObject> v) : _cls(cls), _tag(tag), _preLength(preLength), _constructed(true), _subObj(v) {
+};
+
+size_t AsnObject::length() const {
+	size_t len = 0;
+	for (AsnObject a : _subObj) {
+		len += a.rawLength();
+	}
+	len += _contents.size();
+	return len;
+}
+
+size_t AsnObject::rawLength() const {
+	return length() + _preLength;
+}
+
+const vector<char>& AsnObject::contents() const {
+	return _contents;
+}
+
+const vector<AsnObject>& AsnObject::subObjects() const {
+	return _subObj;
+}
+
+const AsnObject& AsnObject::subObjects(size_t n) const {
+	return _subObj.at(n);
+}
+
+size_t AsnObject::numSubObjects() const {
+	return _subObj.size();
+}
+
+char AsnObject::getClass() const {
+	return _cls;
+}
+
+size_t AsnObject::getTag() const {
+	return _tag;
+}
+
+bool AsnObject::isConstructed() const {
+	return _constructed;
+}
+
+void AsnObject::rawOut(std::ostream& os) const {
+	char lowTag = _cls << 6;
+	if (_constructed)
+		lowTag |= 0x20;
+	if (_tag >= 0x1F) {
+		os << (char)(lowTag | 0x1F);
+		appendSeptets(os, _tag);
+	}
+	else {
+		lowTag |= _tag;
+		os << lowTag;
+	}
+	size_t len = length();
+	if (len < 128) {
+		os << (char)len;
+	}
+	else {
+		char lenOfLen = 0;
+		size_t tmp = len;
+		while (tmp > 0) {
+			++lenOfLen;
+			tmp >>= CHAR_BIT;
+		}
+		os << (char)(lenOfLen | 0x80); //set top bit to signal long length mode
+		len <<= (sizeof(size_t) - lenOfLen)*CHAR_BIT; //put the first nonzero octet at the top
+		for (int i = 0; i < lenOfLen; ++i) {
+			char next = len >> (CHAR_BIT*(sizeof(size_t) - 1));
+			os << next;
+			len <<= CHAR_BIT;
+		}
+	}
+	if (_constructed) {
+		for (AsnObject obj : _subObj) {
+			obj.rawOut(os);
+		}
+	}
+	else {
+		if (_contents.size() > 0)
+			os.write(&_contents[0], _contents.size());
+	}
+}

@@ -2,7 +2,6 @@
 #include "RsaDecryptor.h"
 #include "randomNumbers.h"
 #include "mpzConvert.h"
-#include "CryptContext.h"
 #include "memoryhelper.h"
 #include "../SHA1/Sha1Class.h"
 
@@ -196,4 +195,28 @@ std::vector<char> RsaOaepDecryptor::decrypt(const std::vector<char>& C, const st
 	charBuf M(mLen);
 	memcpy(&M[0], &msgBegin[0], mLen);								//copy out message from end of EM
 	return M;
+}
+
+RsaVerifier::RsaVerifier(rsaPublicKey pk) : _N(pk.N), _e(pk.e) {
+	if (_N == 0 || _e > _N)
+		throw 5;//throw random obbject to crash if invalid key is passed
+	_ksz = mpz_sizeinbase(_N.get_mpz_t(), 256);
+}
+
+bool RsaVerifier::verify(std::istream& msg, const charBuf& sig) {
+	std::cerr << "RsaVerifier::verify: function not implemented" << std::endl;
+	return false;
+}
+
+std::vector<char> RsaVerifier::exportKey() {
+	std::cerr << "RsaVerifier::exportKey: function not implemented" << std::endl;
+	return charBuf(0);
+};
+
+void RsaVerifier::importKey(charBuf buf) {
+	std::cerr << "RsaVerifier::exportKey: function not implemented" << std::endl;;
+};
+
+size_t RsaVerifier::keySize() {
+	return _ksz;
 }

@@ -60,23 +60,31 @@ public:
 	virtual ~TaggedDecryptor() {};
 };
 
+
+//any stream passed to sign() must be able to be reset and re-read from the beginning
+//a buffer passed to pass() will be read once, and the return value indicates whether
+//the Signer is ready to output a signature.
+//NOTE: the exact same file/buffer must be fed into pass both times or the output is gibberish
 class Signer : virtual public CipherBase
 {
 public:
 	virtual std::vector<char> sign(std::istream& msg) = 0;
+	virtual bool pass(std::istream& msg) = 0;
+	virtual std::vector<char> sign() = 0;
 	virtual ~Signer() {};
 };
 
 class Verifier : virtual public CipherBase
 {
 public:
-	virtual std::vector<char> sign(std::istream& msg, const std::vector<char>& sig) = 0;
+	virtual bool verify(std::istream& msg, const std::vector<char>& sig) = 0;
 	virtual ~Verifier() {};
 };
 
 typedef std::shared_ptr<HashFunction> hashPtr;
 typedef std::shared_ptr<Verifier> verifyPtr;
 typedef std::vector<char> charBuf;
+typedef charBuf::iterator(*mgfPtr)(charBuf::const_iterator begin, charBuf::const_iterator end, charBuf::iterator d_begin, size_t maskLen);
 
 inline charBuf doHash(hashPtr hash, charBuf L) {
 	hash->reset();

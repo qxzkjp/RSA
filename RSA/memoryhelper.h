@@ -28,4 +28,9 @@ OutputIt memxor(InputIt first, InputIt last, OutputIt d_first) {
 	return ret;
 }
 
-void reverseMemcpy(void* dst, void* src, size_t cnt);
+inline void reverseMemcpy(void* dst, void* src, size_t cnt) {
+	char* d = (char*)dst;
+	char* s = (char*)src;
+	for (size_t i = 0; i < cnt; ++i)
+		d[cnt - i - 1] = s[i];
+}

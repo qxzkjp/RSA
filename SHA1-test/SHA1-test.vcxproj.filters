@@ -21,15 +21,12 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ASN1.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ASN1.cpp">
+    <ClCompile Include="SHA1test.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -2,7 +2,7 @@
 
 #include "Buffer.h"
 
-Buffer::Buffer(size_t n )
+Buffer::Buffer(size_t n)
 {
 	_sz = n;
 	updateData();
@@ -79,7 +79,7 @@ bool Buffer::operator==(const std::vector<char>& v) const {
 	return false;
 }
 
-void Buffer::updateData(BYTE* ptr ) {
+void Buffer::updateData(BYTE* ptr) {
 	if (_sz > 0) {
 		_data = new BYTE[_sz];
 		if (ptr)

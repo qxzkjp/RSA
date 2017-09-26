@@ -21,28 +21,7 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="randomNumbers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mpzConvert.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="interfaces.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="RsaDecryptor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\SHA1\Sha1Class.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="eflags.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="memoryhelper.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mgf1.h">
+    <ClInclude Include="..\ASN1\ASN1.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -50,22 +29,7 @@
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RSA.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="randomNumbers.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="mpzConvert.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="millerRabin.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="RsaDecryptor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="mgf1.cpp">
+    <ClCompile Include="ASN1test.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
