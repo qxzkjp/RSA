@@ -94,3 +94,11 @@ inline charBuf doHash(hashPtr hash, charBuf L) {
 	hash->reset();
 	return lHash;
 }
+
+template<class Hash>
+inline charBuf doHash(charBuf L) {
+	Hash hash{};
+	hash.addData(L.begin(), L.end());
+	charBuf lHash = hash.finalise();
+	return lHash;
+}

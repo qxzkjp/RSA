@@ -45,7 +45,7 @@ inline char sizeToChar(size_t n) {
 
 void mgf1Test() {
 	int testLen = 0x10000;
-	charBuf v = MGF1(std::make_shared<Sha1Class>(), { 1,2,3,4,5,6,7,8,9,10 }, testLen);
+	charBuf v = MGF1<Sha1Class>({ 1,2,3,4,5,6,7,8,9,10 }, testLen);
 	Sha1Class sha;
 	charBuf tmp(20);
 	charBuf w(0);
@@ -68,14 +68,12 @@ void mgf1Test() {
 		std::cout << "failed";
 	std::cout << std::endl;
 	bool truncTest = true;
-	//hashPtr h(new Sha1Class);
-	hashPtr h = std::make_shared<Sha1Class>();
 	for (int i = 1; i < testLen/0x100; ++i) {
-		w = MGF1(h, { 1,2,3,4,5,6,7,8,9,10 }, i);
+		w = MGF1<Sha1Class>({ 1,2,3,4,5,6,7,8,9,10 }, i);
 		truncTest = truncTest && (memcmp(&v[0], &w[0], i) == 0);
 	}
 	for (int i = testLen / 0x100; i < testLen; i+=0x50) {
-		w = MGF1(h, { 1,2,3,4,5,6,7,8,9,10 }, i);
+		w = MGF1<Sha1Class>({ 1,2,3,4,5,6,7,8,9,10 }, i);
 		truncTest = truncTest && (memcmp(&v[0], &w[0], i) == 0);
 	}
 	std::cout << "MGF1 truncation test ";
@@ -110,7 +108,7 @@ int testRsaOaep(std::string filename="rsaLog.txt") {
 	fs << ss.str();
 	ss.str("");
 	ss.clear();
-	RsaOaepDecryptor key(pk, mgf1sha1, std::make_shared<Sha1Class>());
+	RsaOaepDecryptor<MGF1_class<Sha1Class>, Sha1Class> key(pk);
 	bool success = true;
 	for (size_t l = 0x10; l <= 0xd0; l += 0x10) {
 		std::cout << "Message size: " << l << std::endl;
@@ -185,7 +183,7 @@ bool testSpecificCase(
 		mpz_class(dpStr),
 		mpz_class(dqStr),
 		mpz_class(qInvStr) };
-	RsaOaepDecryptor dec(pk);
+	RsaOaepDecryptor<MGF1_class<Sha1Class>, Sha1Class> dec(pk);
 	charBuf M = hexStrToVec(msg);
 	dec.setNextSeed(hexStrToVec(seed));
 	charBuf C = dec.encrypt(M);
