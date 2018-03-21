@@ -40,6 +40,8 @@ private:
 	PointedBuffer _buf;
 };
 
+charBuf doSha1(std::istream& is);
+
 void reverseMemcpy(void* dst, void* src, size_t cnt);
 
 //uint32_t ROTL(uint32_t a, size_t n);

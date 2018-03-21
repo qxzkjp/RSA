@@ -4,6 +4,7 @@
 #include "mpzConvert.h"
 #include "memoryhelper.h"
 #include "../SHA1/Sha1Class.h"
+#include <thread>
 
 bool oldLikelyPrime(mpz_class n) {
 	return mpz_likely_prime_p(n.get_mpz_t(), globalContext.gmpState(), 0);
@@ -34,19 +35,61 @@ mpz_class getBigPrime(size_t bits) {
 	return p;
 }
 
-RsaEncryptor::RsaEncryptor(rsaPublicKey pk) : _N(pk.N), _e(pk.e) {
-	if (_N == 0 || _e > _N)
+void getBigPrimeThread(size_t bits, mpz_class& x) {
+	x = getBigPrime(bits);
+}
+
+charBuf RSAEP(const charBuf& M, const mpz_class& N, const mpz_class& e)
+{
+	mpz_class m = vectorToMpzClass(M);
+	mpz_class c;
+	mpz_powm(c.get_mpz_t(), m.get_mpz_t(), e.get_mpz_t(), N.get_mpz_t());
+	std::vector<char> C = mpzClassToVector(c);
+	return C;
+}
+
+charBuf RSADP(
+	const charBuf& C,
+	const mpz_class& N,
+	const mpz_class& p,
+	const mpz_class& q,
+	const mpz_class& dp,
+	const mpz_class& dq,
+	const mpz_class& qInv,
+	size_t k
+) {
+	mpz_class c = vectorToMpzClass(C);
+	mpz_class m, m1, m2, m3, h;
+	mpz_powm(m1.get_mpz_t(), c.get_mpz_t(), dp.get_mpz_t(), p.get_mpz_t());
+	mpz_powm(m2.get_mpz_t(), c.get_mpz_t(), dq.get_mpz_t(), q.get_mpz_t());
+	h = (qInv*(m1 - m2)) % p;
+	auto h2 = h; //dummy var
+	if (h < 0)	//make sure h is positive, in constant-time
+		h += p;
+	else
+		h2 += p;
+	m = m2 + h*q;
+	std::vector<char> M = mpzClassToVector(m, k);//we pad the number to k bytes if neccessary
+	return M;
+}
+
+void RsaEncryptor::checkAndSet() {
+	if (_key.N == 0 || _key.e > _key.N)
 		throw 5;//throw random obbject to crash if invalid key is passed
-	_ksz = mpz_sizeinbase(_N.get_mpz_t(), 256);
+	_ksz = mpz_sizeinbase(_key.N.get_mpz_t(), 256);
+}
+
+RsaEncryptor::RsaEncryptor(rsaPublicKey pk) : _key({ pk.N,pk.e,0,0,0,0,0,0 }) {
+	checkAndSet();
+}
+
+RsaEncryptor::RsaEncryptor(rsaPrivateKey pk) : _key(pk) {
+	checkAndSet();
 }
 
 std::vector<char> RsaEncryptor::encrypt(const std::vector<char>& M)
 {
-	mpz_class m = vectorToMpzClass(M);
-	mpz_class c;
-	mpz_powm(c.get_mpz_t(), m.get_mpz_t(), _e.get_mpz_t(), _N.get_mpz_t());
-	std::vector<char> C = mpzClassToVector(c);
-	return C;
+	return RSAEP(M, _key.N, _key.e);
 }
 
 std::vector<char> RsaEncryptor::exportKey() {
@@ -64,8 +107,12 @@ size_t RsaEncryptor::keySize() {
 rsaPrivateKey newRsaPrivateKey(size_t sz)
 {
 	rsaPrivateKey pk;
-	pk.p = getBigPrime(sz / 2);
-	pk.q = getBigPrime(sz / 2);
+	//pk.p = getBigPrime(sz / 2);
+	//pk.q = getBigPrime(sz / 2);
+	std::thread t1(&getBigPrimeThread, sz/2, std::ref(pk.p));
+	std::thread t2(&getBigPrimeThread, sz/2, std::ref(pk.q));
+	t1.join();
+	t2.join();
 	pk.N = pk.p*pk.q;
 	pk.e = 65537;
 	mpz_class lambda;
@@ -86,41 +133,47 @@ rsaPrivateKey newRsaPrivateKey(size_t sz)
 	return pk;
 }
 
-RsaDecryptor::RsaDecryptor(rsaPrivateKey pk) : RsaEncryptor({pk.N,pk.e}), _d(pk.d), _p(pk.p), _q(pk.q), _dp(pk.dp), _dq(pk.dq), _qinv(pk.qinv) {
+RsaDecryptor::RsaDecryptor(rsaPrivateKey pk) : RsaEncryptor(pk) {
 }
 
 std::vector<char> RsaDecryptor::exportKey() { 
 	std::cerr << "RsaDecryptor::exportKey" << std::endl;
 	return std::vector<char>(0);
 }
-void RsaDecryptor::importKey(std::vector<char> buf) {}
+void RsaDecryptor::importKey(std::vector<char> buf) {
+	std::cerr << "RsaDecryptor::importKey" << std::endl;
+}
 
 std::vector<char> RsaDecryptor::decrypt(const std::vector<char>& C)
 {
-	mpz_class c = vectorToMpzClass(C);
-	mpz_class m, m1, m2, m3, h;
-	mpz_powm(m1.get_mpz_t(), c.get_mpz_t(), _dp.get_mpz_t(), _p.get_mpz_t());
-	mpz_powm(m2.get_mpz_t(), c.get_mpz_t(), _dq.get_mpz_t(), _q.get_mpz_t());
-	//m3 is a dummy, to prevent timing attacks. let's hope the compiler does not optimise it away.
-	m3 = m1;
-	if (m1 < m2) {
-		m1 = m1 + _p;
-	}
-	else {
-		m3 = m3 + _p;
-	}
-	(void)m3; //magic incantation to prevent optimising away m3
-	h = (_qinv*(m1 - m2)) % _p;
-	m = m2 + h*_q;
-	std::vector<char> M = mpzClassToVector(m, _ksz);//we pad the number to ksz bytes if neccessary
-	return M;
+	return RSADP(C, _key.N, _key.p, _key.q, _key.dp, _key.dq, _key.qinv, _ksz);
 }
 
 void RsaDecryptor::generateKey(size_t sz) {}
 
-RsaOaepEncryptor::RsaOaepEncryptor(rsaPublicKey pk, mgfPtr mgf, hashPtr hash) : RsaEncryptor(pk), _mgf(mgf), _hash(hash), _hLen(hash->length()) {
-
+RsaOaepEncryptor::RsaOaepEncryptor(rsaPublicKey pk, mgfPtr mgf, hashPtr hash) :
+	RsaEncryptor(pk),
+	_mgf(mgf),
+	_hash(hash),
+	_hLen(hash->length())
+#ifdef _DEBUG
+	, _lastSeed(_hLen),
+	_nextSeed(_hLen),
+	_overrideSeed(false)
+#endif
+{
 }
+
+#ifdef _DEBUG
+charBuf RsaOaepEncryptor::getLastSeed() {
+	return _lastSeed;
+}
+
+void RsaOaepEncryptor::setNextSeed(charBuf seed) {
+	std::copy(seed.begin(), seed.end(), _nextSeed.begin());
+	_overrideSeed = true;
+}
+#endif
 
 std::vector<char> RsaOaepEncryptor::encrypt(const std::vector<char>& M, const std::vector<char>& L) {
 	auto dbLen = _ksz - _hLen - 1;
@@ -128,12 +181,7 @@ std::vector<char> RsaOaepEncryptor::encrypt(const std::vector<char>& M, const st
 		std::cerr << "rsaOaepEncrypt: message too long" << std::endl;
 		return charBuf(0);
 	}
-	//charBuf lHash = doHash(hash, L);
 	charBuf EM(_ksz);
-	//charBuf DB(k - _hLen - 1);
-	//std::copy(lHash.begin(), lHash.end(), C.begin()+_hLen+1);
-	//*(C.end() - M.size() - 1) = 0x01;
-	//std::copy(M.begin(), M.end(), C.end() - M.size());
 	auto dbBegin = EM.begin() + _hLen + 1;
 	auto seedBegin = EM.begin() + 1;
 	auto seedEnd = dbBegin;
@@ -142,6 +190,13 @@ std::vector<char> RsaOaepEncryptor::encrypt(const std::vector<char>& M, const st
 	//              {--------db-------}
 	//EM = 00||SEED||LHASH||000..01||M
 	getRandomBuffer(seedBegin, seedEnd);			//put seed into beginning of EM (after 1 byte of padding)
+#ifdef _DEBUG
+	if (_overrideSeed) {
+		std::copy(_nextSeed.begin(), _nextSeed.end(), seedBegin);
+		_overrideSeed = false;
+	}
+	std::copy(seedBegin, seedEnd, _lastSeed.begin()); //copy out seed for debugging purposes
+#endif
 	_hash->reset();
 	_hash->addData(L.begin(), L.end());
 	_hash->finalise(dbBegin);						//put lHash at beginning of db
@@ -153,31 +208,29 @@ std::vector<char> RsaOaepEncryptor::encrypt(const std::vector<char>& M, const st
 	return C;
 }
 
-RsaOaepDecryptor::RsaOaepDecryptor(rsaPrivateKey pk, mgfPtr mgf, hashPtr hash) : RsaOaepEncryptor({ pk.N,pk.e }, mgf, hash), RsaEncryptor({ pk.N,pk.e }), RsaDecryptor(pk) {
+RsaOaepDecryptor::RsaOaepDecryptor(rsaPrivateKey pk, mgfPtr mgf, hashPtr hash) : RsaOaepEncryptor({ pk.N,pk.e }, mgf, hash), RsaEncryptor(pk), RsaDecryptor(pk) {
 }
 
 std::vector<char> RsaOaepDecryptor::decrypt(const std::vector<char>& C, const std::vector<char>& L) {
-	//auto k = rsa.keySize();
-	auto hLen = _hash->length();
-	auto dbLen = _ksz - hLen - 1;
-	if (_ksz < 2 * hLen + 2) {
+	auto dbLen = _ksz - _hLen - 1;
+	if (_ksz < 2 * _hLen + 2) {
 		std::cerr << "rsaOaepDecrypt: decryption error (hash too big or key too small)" << std::endl;
 		return charBuf(0);
 	}
 	charBuf lHash = doHash(_hash, L);
 	charBuf EM = RsaDecryptor::decrypt(C);
-	auto dbBegin = EM.begin() + hLen + 1;
+	auto dbBegin = EM.begin() + _hLen + 1;
 	auto seedBegin = EM.begin() + 1;
 	auto seedEnd = dbBegin;
-	auto labelEnd = dbBegin + hLen;
+	auto labelEnd = dbBegin + _hLen;
 	auto dbEnd = EM.end();
 	if (EM[0] != 0x00) {
 		std::cerr << "rsaOaepDecrypt: decryption error (invalid initial byte)" << std::endl;
 		return charBuf(0);
 	}
-	_mgf(dbBegin, dbEnd, seedBegin, hLen);							//xor away seedMask
+	_mgf(dbBegin, dbEnd, seedBegin, _hLen);							//xor away seedMask
 	_mgf(seedBegin, seedEnd, dbBegin, dbLen);						//xor away dbMask
-	bool chackLabel = !memcmp(&dbBegin[0], &lHash[0], hLen);		//check if lHash matches
+	bool chackLabel = !memcmp(&dbBegin[0], &lHash[0], _hLen);		//check if lHash matches
 	if (!chackLabel) {
 		std::cerr << "rsaOaepDecrypt: decryption error (label error)" << std::endl;
 		return charBuf(0);
@@ -197,10 +250,16 @@ std::vector<char> RsaOaepDecryptor::decrypt(const std::vector<char>& C, const st
 	return M;
 }
 
-RsaVerifier::RsaVerifier(rsaPublicKey pk) : _N(pk.N), _e(pk.e) {
-	if (_N == 0 || _e > _N)
+RsaVerifier::RsaVerifier(rsaPublicKey pk) : _key({ pk.N,pk.e,0,0,0,0,0,0 }) {
+	if (_key.N == 0 || _key.e > _key.N)
 		throw 5;//throw random obbject to crash if invalid key is passed
-	_ksz = mpz_sizeinbase(_N.get_mpz_t(), 256);
+	_ksz = mpz_sizeinbase(_key.N.get_mpz_t(), 256);
+}
+
+RsaVerifier::RsaVerifier(rsaPrivateKey pk) : _key(pk) {
+	if (_key.N == 0 || _key.e > _key.N)
+		throw 5;//throw random obbject to crash if invalid key is passed
+	_ksz = mpz_sizeinbase(_key.N.get_mpz_t(), 256);
 }
 
 bool RsaVerifier::verify(std::istream& msg, const charBuf& sig) {
@@ -217,6 +276,3 @@ void RsaVerifier::importKey(charBuf buf) {
 	std::cerr << "RsaVerifier::exportKey: function not implemented" << std::endl;;
 };
 
-size_t RsaVerifier::keySize() {
-	return _ksz;
-}

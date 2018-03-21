@@ -2,7 +2,7 @@
 #include "Sha1Class.h"
 #include "../RSA/memoryhelper.h"
 
-uint32_t ROTL(uint32_t a, size_t n) {
+inline uint32_t ROTL(uint32_t a, size_t n) {
 	return (a << n) | (a >> (32 - n));
 }
 
@@ -180,4 +180,10 @@ size_t Sha1Class::length() {
 
 hashPtr Sha1Class::clone() {
 	return std::make_shared<Sha1Class>(*this);
+}
+
+charBuf doSha1(std::istream& is) {
+	Sha1Class sha;
+	sha.addData(is);
+	return sha.finalise();
 }

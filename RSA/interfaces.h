@@ -85,6 +85,7 @@ typedef std::shared_ptr<HashFunction> hashPtr;
 typedef std::shared_ptr<Verifier> verifyPtr;
 typedef std::vector<char> charBuf;
 typedef charBuf::iterator(*mgfPtr)(charBuf::const_iterator begin, charBuf::const_iterator end, charBuf::iterator d_begin, size_t maskLen);
+typedef charBuf(*hashFunc)(std::istream&);
 
 inline charBuf doHash(hashPtr hash, charBuf L) {
 	hash->reset();

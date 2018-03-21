@@ -31,14 +31,16 @@ class RsaEncryptor : virtual public Encryptor
 {
 public:
 	RsaEncryptor(rsaPublicKey pk);
+	RsaEncryptor(rsaPrivateKey pk);
 	virtual std::vector<char> encrypt(const std::vector<char>& M);
 	virtual std::vector<char> exportKey();
 	virtual void importKey(std::vector<char> buf);
 	size_t keySize();
 protected:
-	mpz_class _N;
-	mpz_class _e;
+	rsaPrivateKey _key;
 	size_t _ksz;
+private:
+	void checkAndSet();
 };
 
 class RsaDecryptor : virtual public RsaEncryptor, virtual public Decryptor
@@ -50,12 +52,6 @@ public:
 	virtual std::vector<char> exportKey();
 	virtual void importKey(std::vector<char> buf);
 private:
-	mpz_class _p;
-	mpz_class _q;
-	mpz_class _d;
-	mpz_class _dp;
-	mpz_class _dq;
-	mpz_class _qinv;
 };
 
 class RsaOaepEncryptor : virtual protected RsaEncryptor, virtual public TaggedEncryptor {
@@ -65,10 +61,19 @@ public:
 	virtual std::vector<char> encrypt(const std::vector<char>& M) { return encrypt(M, charBuf(0)); };
 	virtual std::vector<char> exportKey() { return charBuf(0); };
 	virtual void importKey(std::vector<char> buf) {};
+#ifdef _DEBUG
+	charBuf getLastSeed();
+	void setNextSeed(charBuf seed);
+#endif
 protected:
 	mgfPtr _mgf;
 	hashPtr _hash;
 	size_t _hLen;
+#ifdef _DEBUG
+	charBuf _lastSeed;
+	charBuf _nextSeed;
+	bool _overrideSeed;
+#endif
 };
 
 class RsaOaepDecryptor : protected RsaDecryptor, public RsaOaepEncryptor, virtual public TaggedDecryptor {
@@ -87,16 +92,41 @@ private:
 class RsaVerifier : virtual public Verifier {
 public:
 	RsaVerifier(rsaPublicKey pk);
-	virtual bool verify(std::istream& msg, const charBuf& sig) ;
-	virtual std::vector<char> exportKey();
-	virtual void importKey(charBuf buf);
-	size_t keySize();
+	RsaVerifier(rsaPrivateKey pk);
+	virtual bool verify(std::istream& msg, const charBuf& sig)=0;
+	virtual std::vector<char> exportKey() = 0;
+	virtual void importKey(charBuf buf) = 0;
+	size_t keySize() {
+		return _ksz;
+	}
 private:
-	mpz_class _N;
-	mpz_class _e;
+	rsaPrivateKey _key;
 	size_t _ksz;
 };
 
+class RsaPssVerifier : public RsaVerifier {
+public:
+	RsaPssVerifier(rsaPublicKey pk, hashFunc hash, mgfPtr mgf, size_t sLen) : RsaVerifier(pk), _hash(hash), _mgf(mgf), _sLen(sLen) {}
+	RsaPssVerifier(rsaPrivateKey pk, hashFunc hash, mgfPtr mgf, size_t sLen) : RsaVerifier(pk), _hash(hash), _mgf(mgf), _sLen(sLen) {}
+	virtual bool verify(std::istream& msg, const charBuf& sig) { return true; };
+	virtual std::vector<char> exportKey() { return charBuf(0); };
+	virtual void importKey(charBuf buf) {};
+private:
+	hashFunc _hash;
+	mgfPtr _mgf;
+	size_t _sLen;
+};
+
+class RsaPssSigner : public RsaPssVerifier, virtual public Signer {
+public:
+	virtual std::vector<char> sign(std::istream& msg) { pass(msg); return sign(); }
+	virtual bool pass(std::istream& msg) {
+		return true;
+	}
+	virtual std::vector<char> sign() { return charBuf(0); };
+	virtual std::vector<char> exportKey() { return charBuf(0); };
+	virtual void importKey(charBuf buf) {};
+private:
+};
+
 rsaPrivateKey newRsaPrivateKey(size_t sz = 2048);
-
-
