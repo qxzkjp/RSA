@@ -2,6 +2,6 @@
 //
 
 #include "stdafx.h"
-
+#include "shaclass.h"
 
 

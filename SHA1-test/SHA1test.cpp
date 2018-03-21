@@ -230,11 +230,14 @@ int main()
 	std::cout << std::endl << "Testing hash object cloning..." << std::endl;
 	for (auto i = vects.begin(); i != vects.end(); ++i)
 		success = success && showSha1CloneTest(*i);
-	if (success)
+	int ret = 0;
+	if (success) {
 		std::cout << std::endl << "All succeeded!";
-	else
+	}
+	else {
 		std::cout << std::endl << "Some failures.";
+		ret = 1;
+	}
 	std::cout << std::endl;
-	system("pause");
-	return 0;
+	return ret;
 }

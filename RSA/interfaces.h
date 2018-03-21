@@ -24,10 +24,11 @@ public:
 	virtual void reset() = 0;
 	virtual std::istream& addData(std::istream& inbuf) = 0;
 	virtual void addData(std::vector<char>::const_iterator begin, std::vector<char>::const_iterator end) = 0;
-	virtual std::vector<char> finalise() = 0;
-	virtual void finalise(std::vector<char>::iterator it) = 0;
-	virtual size_t length() = 0;
-	virtual std::shared_ptr<HashFunction> clone() = 0;
+	virtual std::vector<char> finalise() const = 0;
+	virtual void finalise(std::vector<char>::iterator it) const = 0;
+	virtual size_t length() const = 0;
+	virtual size_t blockLength() const = 0;
+	virtual std::shared_ptr<HashFunction> clone() const = 0;
 	virtual ~HashFunction() {};
 };
 
