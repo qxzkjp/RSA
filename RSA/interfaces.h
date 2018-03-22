@@ -61,15 +61,25 @@ public:
 	virtual ~TaggedDecryptor() {};
 };
 
+class KeyAgreement : virtual public CipherBase
+{
+public:
+	virtual std::vector<char> getPublic() const = 0;
+	virtual std::vector<char> agreeKey(std::vector<char> otherPublic) const = 0;
+	virtual ~KeyAgreement() {};
+};
 
-//any stream passed to sign() must be able to be reset and re-read from the beginning
+
+//sign() takes a vector because it may need to read the message several times
+//sign with no arguments gives the result of signing the message pass()-ed through
+//will return an empty buffer or perhaps throw an exception if there is no signature ready
 //a buffer passed to pass() will be read once, and the return value indicates whether
 //the Signer is ready to output a signature.
 //NOTE: the exact same file/buffer must be fed into pass both times or the output is gibberish
 class Signer : virtual public CipherBase
 {
 public:
-	virtual std::vector<char> sign(std::istream& msg) = 0;
+	virtual std::vector<char> sign(std::vector<char>::const_iterator begin, std::vector<char>::const_iterator end) = 0;
 	virtual bool pass(std::istream& msg) = 0;
 	virtual std::vector<char> sign() = 0;
 	virtual ~Signer() {};

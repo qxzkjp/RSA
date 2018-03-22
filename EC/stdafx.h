@@ -7,17 +7,20 @@
 
 #include "targetver.h"
 
+#pragma warning(disable:4800)
+#include "gmpxx.h"
+#pragma warning(default:4800)
+
+#define NOMINMAX
+#define _SCL_SECURE_NO_WARNINGS
+
+#include <Windows.h>
+#include <wincrypt.h>
+
 #include <stdio.h>
 #include <tchar.h>
-#include <vector>
-#include <stdint.h>
-#include <string>
 #include <iostream>
-#include <conio.h>
-#include <cstdlib>
 #include <vector>
-#include <sstream>
-#include <memory>
-
+#include <string>
 
 // TODO: reference additional headers your program requires here

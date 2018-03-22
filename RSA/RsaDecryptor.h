@@ -91,6 +91,8 @@ public:
 private:
 };
 
+
+//these signing and verification classes do nothing for now
 class RsaVerifier : virtual public Verifier {
 public:
 	RsaVerifier(rsaPublicKey pk);
@@ -121,7 +123,7 @@ private:
 
 class RsaPssSigner : public RsaPssVerifier, virtual public Signer {
 public:
-	virtual std::vector<char> sign(std::istream& msg) { pass(msg); return sign(); }
+	virtual std::vector<char> sign(std::vector<char>::const_iterator begin, std::vector<char>::const_iterator end) { return sign(); }
 	virtual bool pass(std::istream& msg) {
 		return true;
 	}
@@ -130,6 +132,8 @@ public:
 	virtual void importKey(charBuf buf) {};
 private:
 };
+
+//end of classes that don't work
 
 rsaPrivateKey newRsaPrivateKey(size_t sz = 2048);
 
